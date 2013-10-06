@@ -3,23 +3,21 @@
  *
  * This module demonstrates the WebRTC API by implementing a simple video chat app.
  *
- * Based on http://webrtc.googlecode.com/svn/trunk/samples/js/apprtc/apprtc.py
+ * Based on http://webrtc.googlecode.com/svn/trunk/samples/js/apprtc/apprtc.py rev.4932
  * Look browser support on http://iswebrtcreadyyet.com/
  *
  */
 package main
 
 import (
-	//"errors"
+	"encoding/json"
 	"html/template"
 	"io/ioutil"
 	"math/rand"
 	"net/http"
-	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
-	"encoding/json"
 	"time"
 
 	"appengine"
@@ -45,7 +43,7 @@ type Constraints struct {
 	Mandatory Mand      `json:"mandatory,omitempty"`
 }
 type Constraints2 struct {
-	Optional  []Options `json:"optional"`
+	Optional []Options `json:"optional"`
 }
 type Mand struct {
 	MinWidth  string `json:"minWidth,omitempty"`
@@ -63,6 +61,22 @@ type SDP struct {
 	Id        string `json:"id,omitempty"`
 	Candidate string `json:"candidate,omitempty"`
 	Label     int    `json:"label,omitempty"`
+}
+
+// This database is to store the messages from the sender client when the
+// receiver client is not ready to receive the messages.
+// Use []byte instead of string for msg because
+// the session description can be more than 500 characters.
+type Message struct {
+	Client_Id string `datastore:"client_id"`
+	Msg       []byte `datastore:"msg"`
+}
+
+type Room struct {
+	User1           string `datastore:"user1"`
+	User2           string `datastore:"user2"`
+	User1_Connected bool   `datastore:"user1_connected"`
+	User2_Connected bool   `datastore:"user2_connected"`
 }
 
 func generate_random(length int) string {
@@ -83,6 +97,10 @@ func randomInt(min int, max int) int {
 func sanitize(key string) string {
 	re := regexp.MustCompile("[^a-zA-Z0-9]")
 	return re.ReplaceAllString(key, "-")
+}
+
+func make_client_id(room, user string) string {
+	return room + "/" + user
 }
 
 func get_default_stun_server(user_agent string) string {
@@ -109,10 +127,10 @@ func get_preferred_audio_send_codec(user_agent string) string {
 func make_pc_config(stun_server, turn_server, ts_pwd string) interface{} {
 	cfgs := make([]Config, 0)
 	if turn_server != "" {
-		cfgs = append(cfgs, Config{Url: "turn:"+turn_server, Credential: ts_pwd})
+		cfgs = append(cfgs, Config{Url: "turn:" + turn_server, Credential: ts_pwd})
 	}
 	if stun_server != "" {
-		cfgs = append(cfgs, Config{Url: "stun:"+stun_server})
+		cfgs = append(cfgs, Config{Url: "stun:" + stun_server})
 	}
 
 	return &ICE{IceServers: cfgs}
@@ -125,7 +143,6 @@ func make_loopback_answer(message string) string {
 }
 
 func make_media_constraints(cxt appengine.Context, media, min_re, max_re string) interface{} {
-	//mediaConstraints = {"audio":true,"video":"[]"};
 	var a, b, c, d string
 	// Media: audio:audio only; video:video only; (default):both.
 	if strings.ToLower(media) != "audio" {
@@ -135,7 +152,7 @@ func make_media_constraints(cxt appengine.Context, media, min_re, max_re string)
 				a = min_sizes[0]
 				b = min_sizes[1]
 			} else {
-				cxt.Infof("Ignored invalid max_re:" + min_re)
+				cxt.Infof("Ignored invalid max_re: %s", min_re)
 			}
 		}
 		if max_re != "" {
@@ -144,10 +161,11 @@ func make_media_constraints(cxt appengine.Context, media, min_re, max_re string)
 				c = max_sizes[0]
 				d = max_sizes[1]
 			} else {
-				cxt.Infof("Ignored invalid max_re:" + max_re)
+				cxt.Infof("Ignored invalid max_re: %s", max_re)
 			}
 		}
 	}
+	cxt.Infof("Applying media constraints: %s", &MediaConstraints{Audio: true, Video: Constraints{Mandatory: Mand{MinWidth: a, MinHeight: b, MaxWidth: c, MaxHeight: d}, Optional: []Options{}}})
 	return &MediaConstraints{Audio: true, Video: Constraints{Mandatory: Mand{MinWidth: a, MinHeight: b, MaxWidth: c, MaxHeight: d}, Optional: []Options{}}}
 }
 
@@ -165,18 +183,6 @@ func make_offer_constraints() interface{} {
 	var constraints *Constraints
 	constraints = &Constraints{Optional: []Options{}}
 	return constraints
-}
-
-type Message struct {
-	Client_Id string
-	Msg       string
-}
-
-type Room struct {
-	User1           string
-	User2           string
-	User1_Connected bool
-	User2_Connected bool
 }
 
 func (r *Room) get_occupancy() int {
@@ -219,26 +225,20 @@ func (r *Room) add_user(user string) {
 }
 
 func (r *Room) remove_user(user string) {
-	//messages = datastore.NewQuery("Messages").Filter("client_id =", client_id)
-	/*var messages []Message
-	for _, message := range messages {
-		channel.Send(c, client_id, message.Msg)
-		c.Infof("Delivered saved message to " + client_id)
-		//datastore.delete()
-	}
-	*/
 	if user == r.User2 {
 		r.User2 = ""
 		r.User2_Connected = false
 	}
 	if user == r.User1 {
-		r.User1 = r.User2
-		r.User1_Connected = r.User2_Connected
-		r.User2 = ""
-		r.User2_Connected = false
-	} else {
-		r.User1 = ""
-		r.User1_Connected = false
+		if r.User2 != "" {
+			r.User1 = r.User2
+			r.User1_Connected = r.User2_Connected
+			r.User2 = ""
+			r.User2_Connected = false
+		} else {
+			r.User1 = ""
+			r.User1_Connected = false
+		}
 	}
 }
 
@@ -263,14 +263,15 @@ func (r *Room) is_connected(user string) bool {
 
 func disconnected_page(w http.ResponseWriter, r *http.Request) {
 	c := appengine.NewContext(r)
-	client_id, _ := ioutil.ReadAll(r.Body)
-	k := strings.Split(strings.Split(string(client_id), "=")[1],"/")
+	b, _ := ioutil.ReadAll(r.Body)
+	k := strings.Split(strings.Split(string(b), "=")[1], "/")
 	var room_key string
 	var user string
 	if len(k) == 2 {
 		room_key = k[0]
 		user = k[1]
 	}
+	client_id := make_client_id(room_key, user)
 	room := new(Room)
 	err := datastore.Get(c, datastore.NewKey(c, "Room", room_key, 0, nil), room)
 	if err != nil {
@@ -279,8 +280,18 @@ func disconnected_page(w http.ResponseWriter, r *http.Request) {
 	if room != nil && room.has_user(user) {
 		other_user := room.get_other_user(user)
 		room.remove_user(user)
+		q := datastore.NewQuery("Messages").Filter("client_id =", client_id)
+		var messages []Message
+		k, err := q.GetAll(c, &messages)
+		if err != nil {
+			c.Errorf("datastore: %v", err)
+		}
+		for i, _ := range messages {
+			datastore.Delete(c, datastore.NewKey(c, k[i].Kind(), k[i].StringID(), k[i].IntID(), nil))
+			c.Infof("Deleted the saved message for " + client_id)
+		}
 		if room.get_occupancy() > 0 {
-			datastore.Put(c, datastore.NewKey(c, "Room", room_key, 0, nil),room)
+			datastore.Put(c, datastore.NewKey(c, "Room", room_key, 0, nil), room)
 		} else {
 			datastore.Delete(c, datastore.NewKey(c, "Room", room_key, 0, nil))
 		}
@@ -290,20 +301,21 @@ func disconnected_page(w http.ResponseWriter, r *http.Request) {
 			channel.Send(c, room_key+"/"+other_user, `{"type": "bye"}`)
 			c.Infof("Sent BYE to %s", other_user)
 		}
-		c.Infof("User %s disconnected from room %s", user, room_key)
+		c.Warningf("User %s disconnected from room %s", user, room_key)
 	}
 }
 
 func connect_page(w http.ResponseWriter, r *http.Request) {
 	c := appengine.NewContext(r)
-	client_id, _ := ioutil.ReadAll(r.Body)
-	k := strings.Split(strings.Split(string(client_id), "=")[1],"/")
+	b, _ := ioutil.ReadAll(r.Body)
+	k := strings.Split(strings.Split(string(b), "=")[1], "/")
 	var room_key string
 	var user string
 	if len(k) == 2 {
 		room_key = k[0]
 		user = k[1]
 	}
+	client_id := make_client_id(room_key, user)
 	room := new(Room)
 	err := datastore.Get(c, datastore.NewKey(c, "Room", room_key, 0, nil), room)
 	if err != nil {
@@ -312,30 +324,32 @@ func connect_page(w http.ResponseWriter, r *http.Request) {
 	if room != nil && room.has_user(user) {
 		room.set_connected(user)
 		datastore.Put(c, datastore.NewKey(c, "Room", room_key, 0, nil), room)
-		//messages = datastore.NewQuery("Messages").Filter("client_id =", client_id)
-		/*
+		q := datastore.NewQuery("Messages").Filter("client_id =", client_id)
 		var messages []Message
-		for _, message := range messages {
-			channel.Send(c, client_id, message.Msg)
-			c.Infof("Delivered saved message to " + client_id)
-			//datastore.delete()
+		k, err := q.GetAll(c, &messages)
+		if err != nil {
+			c.Errorf("datastore: %v", err)
 		}
-		*/
+		for i, msg := range messages {
+			channel.Send(c, client_id, string(msg.Msg))
+			c.Infof("Delivered saved message to " + client_id)
+			datastore.Delete(c, datastore.NewKey(c, k[i].Kind(), k[i].StringID(), k[i].IntID(), nil))
+		}
 		c.Infof("User %s connected to room %s", user, room_key)
 		c.Infof("Room %s has state %q", room_key, room)
 	} else {
-		c.Infof("Unexpected Connect Message to room %s", room_key)
+		c.Warningf("Unexpected Connect Message to room %s", room_key)
 	}
 }
 
 func message_page(w http.ResponseWriter, r *http.Request) {
 	c := appengine.NewContext(r)
-	req, _ := url.Parse(r.RequestURI)
-	room_key := req.Query().Get("r")
-	user := req.Query().Get("u")
+	room_key := r.URL.Query().Get("r")
+	user := r.URL.Query().Get("u")
 	m, _ := ioutil.ReadAll(r.Body)
 	msg := string(m)
 	room := new(Room)
+	client_id := make_client_id(room_key, user)
 	datastore.Get(c, datastore.NewKey(c, "Room", room_key, 0, nil), room)
 	if room != nil {
 		var message SDP
@@ -345,8 +359,18 @@ func message_page(w http.ResponseWriter, r *http.Request) {
 			// This would remove the other_user in loopback test too.
 			// So check its availability before forwarding Bye message.
 			room.remove_user(user)
+			q := datastore.NewQuery("Messages").Filter("client_id =", client_id)
+			var messages []Message
+			k, err := q.GetAll(c, &messages)
+			if err != nil {
+				c.Errorf("datastore: %v", err)
+			}
+			for i, _ := range messages {
+				datastore.Delete(c, datastore.NewKey(c, k[i].Kind(), k[i].StringID(), k[i].IntID(), nil))
+				c.Infof("Deleted the saved message for " + client_id)
+			}
 			if room.get_occupancy() > 0 {
-				datastore.Put(c, datastore.NewKey(c, "Room", room_key, 0, nil),room)
+				datastore.Put(c, datastore.NewKey(c, "Room", room_key, 0, nil), room)
 			} else {
 				datastore.Delete(c, datastore.NewKey(c, "Room", room_key, 0, nil))
 			}
@@ -361,24 +385,35 @@ func message_page(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 			if room.is_connected(other_user) {
-				channel.Send(c, room_key+"/"+other_user, msg)
+				channel.Send(c, make_client_id(room_key, other_user), msg)
 				c.Infof("Delivered message to user %s", other_user)
 			} else {
-				//new_message := Message(room_key+"/"+u, msg)
-				//datastore.put()
-				c.Infof("Saved message for user %s", user)
+				_msg := Message{
+					Client_Id: make_client_id(room_key, other_user),
+					Msg:       []byte(msg),
+				}
+				_, err := datastore.Put(c, datastore.NewIncompleteKey(c, "Message", nil), &_msg)
+				if err != nil {
+					c.Errorf("datastore: %v", err)
+				}
+				c.Infof("Saved message for user %s", other_user)
 			}
 		}
 	} else {
-		c.Infof("Unknown room %s", room_key)
+		c.Warningf("Unknown room %s", room_key)
 	}
 }
 
 func main_page(w http.ResponseWriter, r *http.Request) {
 	c := appengine.NewContext(r)
-	u, _ := url.Parse(r.RequestURI)
-	q := u.Query()
-	base_url := "http://" + r.Host
+	q := r.URL.Query()
+	var base_url string
+	// for localhost tests
+	if r.URL.Host == "" {
+		base_url = "http://" + r.Host
+	} else {
+		base_url = r.URL.Scheme + "://" + r.URL.Host
+	}
 	user_agent := r.UserAgent()
 	room_key := sanitize(q.Get("r"))
 	debug := q.Get("debug")
@@ -466,9 +501,14 @@ func main_page(w http.ResponseWriter, r *http.Request) {
 		c.Infof("Room " + room_key + " is full")
 		return
 	}
-	room_link := base_url + r.RequestURI
+	var room_link string
+	if r.URL.Host == "" {
+		room_link = base_url + "/?r=" + room_key
+	} else {
+		room_link = r.URL.String()
+	}
 	turn_url = turn_url + "turn?" + "username=" + user + "&key=4080218913"
-	token, _ := channel.Create(c, room_key+"/"+user)
+	token, _ := channel.Create(c, make_client_id(room_key, user))
 	pc_config := make_pc_config(stun_server, turn_server, ts_pwd)
 	pc_constraints := make_pc_constraints(compat)
 	offer_constraints := make_offer_constraints()
