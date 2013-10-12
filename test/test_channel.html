@@ -7,7 +7,7 @@ To run this test:
 
 <html>
 <head>
-<link rel="canonical" href="{{ room_link }}"/>
+<link rel="canonical" href="{{.room_link}}"/>
 <meta http-equiv="X-UA-Compatible" content="chrome=1"/>
 <script src="/_ah/channel/jsapi"></script>
 <script type="text/javascript">
@@ -27,8 +27,8 @@ To run this test:
   }
 
   function runTest() {
-    trace("Initializing; room={{ room_key }}.");
-    var channel = new goog.appengine.Channel('{{ token }}');
+    trace("Initializing; room={{.room_key}}.");
+    var channel = new goog.appengine.Channel('{{.token}}');
     var handler = {
       'onopen': onChannelOpened,
       'onmessage': onChannelMessage,
@@ -53,7 +53,7 @@ To run this test:
   function sendMessage(message) {
     var msgString = JSON.stringify(message);
     trace('C->S: ' + msgString);
-    path = '/message?r={{ room_key }}' + '&u={{ me }}';
+    path = '/message?r={{.room_key}}' + '&u={{.me}}';
     var xhr = new XMLHttpRequest();
     xhr.open('POST', path, true);
     xhr.send(msgString);

@@ -2,8 +2,9 @@
  * WebRTC Demo
  *
  * This module demonstrates the WebRTC API by implementing a simple video chat app.
- *
- * Based on http://webrtc.googlecode.com/svn/trunk/samples/js/apprtc/apprtc.py rev.4932
+ * 
+ * Rewritten in Golang by Daniel G. Vargas
+ * Based on http://webrtc.googlecode.com/svn/trunk/samples/js/apprtc/apprtc.py (rev.4950)
  * Look browser support on http://iswebrtcreadyyet.com/
  *
  */
@@ -42,9 +43,6 @@ type Constraints struct {
 	Optional  []Options `json:"optional"`
 	Mandatory Mand      `json:"mandatory,omitempty"`
 }
-type Constraints2 struct {
-	Optional []Options `json:"optional"`
-}
 type Mand struct {
 	MinWidth  string `json:"minWidth,omitempty"`
 	MaxWidth  string `json:"maxWidth,omitempty"`
@@ -52,8 +50,8 @@ type Mand struct {
 	MaxHeight string `json:"maxHeight,omitempty"`
 }
 type MediaConstraints struct {
-	Audio bool        `json:"audio,omitempty"`
-	Video Constraints `json:"video"`
+	Audio interface{} `json:"audio,omitempty"`
+	Video interface{} `json:"video"`
 }
 type SDP struct {
 	Type      string `json:"type"`
@@ -72,6 +70,7 @@ type Message struct {
 	Msg       []byte `datastore:"msg"`
 }
 
+// All the data we store for a room
 type Room struct {
 	User1           string `datastore:"user1"`
 	User2           string `datastore:"user2"`
@@ -82,7 +81,7 @@ type Room struct {
 func generate_random(length int) string {
 	word := ""
 	for i := 0; i < length; i++ {
-		rand.Seed(time.Now().UTC().UnixNano()) // constant time on appengine =(
+		rand.Seed(time.Now().UTC().UnixNano())
 		word += strconv.Itoa(rand.Intn(10))
 	}
 	return word
@@ -142,31 +141,33 @@ func make_loopback_answer(message string) string {
 	return message
 }
 
-func make_media_constraints(cxt appengine.Context, media, min_re, max_re string) interface{} {
-	var a, b, c, d string
-	// Media: audio:audio only; video:video only; (default):both.
-	if strings.ToLower(media) != "audio" {
-		if min_re != "" {
-			min_sizes := strings.Split(min_re, "x")
-			if len(min_sizes) == 2 {
-				a = min_sizes[0]
-				b = min_sizes[1]
-			} else {
-				cxt.Infof("Ignored invalid max_re: %s", min_re)
-			}
-		}
-		if max_re != "" {
-			max_sizes := strings.Split(max_re, "x")
-			if len(max_sizes) == 2 {
-				c = max_sizes[0]
-				d = max_sizes[1]
-			} else {
-				cxt.Infof("Ignored invalid max_re: %s", max_re)
-			}
-		}
+func make_media_track_constraints(constraints string) interface{} {
+	type c struct {
+		Mandatory interface{}
+		Optional  []string
 	}
-	cxt.Infof("Applying media constraints: %s", &MediaConstraints{Audio: true, Video: Constraints{Mandatory: Mand{MinWidth: a, MinHeight: b, MaxWidth: c, MaxHeight: d}, Optional: []Options{}}})
-	return &MediaConstraints{Audio: true, Video: Constraints{Mandatory: Mand{MinWidth: a, MinHeight: b, MaxWidth: c, MaxHeight: d}, Optional: []Options{}}}
+	var track_constraints interface{}
+	if constraints == "" || strings.ToLower(constraints) == "true" {
+		track_constraints = true
+	} else if strings.ToLower(constraints) == "false" {
+		track_constraints = false
+	} else {
+		track_constraints = &c{Mandatory: []string{}, Optional: []string{}}
+		/*constraint := strings.Split(track_constraints, "=")
+		if len(constraint) != 2 {
+			panic("Ignoring malformed constraint: ", constraint)
+		}
+		if strings.Contains(constraint[0],"goog"){
+		    track_constraints["optional"] = append(c, {constraint[0]: constraint[1]})
+		  } else {
+		    track_constraints["mandatory"][constraint[0]] = constraint[1]
+		  }*/
+	}
+	return track_constraints
+}
+
+func make_media_stream_constraints(audio, video string) interface{} {
+	return &MediaConstraints{Audio: make_media_track_constraints(audio), Video: make_media_track_constraints(video)}
 }
 
 func make_pc_constraints(compat string) interface{} {
@@ -175,6 +176,10 @@ func make_pc_constraints(compat string) interface{} {
 	// For interop with FireFox. Enable DTLS in peerConnection ctor.
 	if strings.ToLower(compat) == "true" {
 		constraints = &Constraints{Optional: []Options{{DtlsSrtpKeyAgreement: true}}}
+		// Disable DTLS in peerConnection ctor for loopback call. The value
+		// of compat is false for loopback mode.
+	} else {
+		constraints = &Constraints{Optional: []Options{{DtlsSrtpKeyAgreement: false}}}
 	}
 	return constraints
 }
@@ -264,13 +269,10 @@ func (r *Room) is_connected(user string) bool {
 func disconnected_page(w http.ResponseWriter, r *http.Request) {
 	c := appengine.NewContext(r)
 	b, _ := ioutil.ReadAll(r.Body)
-	k := strings.Split(strings.Split(string(b), "=")[1], "/")
-	var room_key string
-	var user string
-	if len(k) == 2 {
-		room_key = k[0]
-		user = k[1]
-	}
+	re := regexp.MustCompile("[0-9]+/[0-9]+")
+	k := strings.Split(re.FindString(string(b)), "/")
+	room_key:= k[0]
+	user := k[1]
 	client_id := make_client_id(room_key, user)
 	room := new(Room)
 	err := datastore.Get(c, datastore.NewKey(c, "Room", room_key, 0, nil), room)
@@ -280,7 +282,7 @@ func disconnected_page(w http.ResponseWriter, r *http.Request) {
 	if room != nil && room.has_user(user) {
 		other_user := room.get_other_user(user)
 		room.remove_user(user)
-		q := datastore.NewQuery("Messages").Filter("client_id =", client_id)
+		q := datastore.NewQuery("Message").Filter("client_id =", client_id)
 		var messages []Message
 		k, err := q.GetAll(c, &messages)
 		if err != nil {
@@ -308,23 +310,22 @@ func disconnected_page(w http.ResponseWriter, r *http.Request) {
 func connect_page(w http.ResponseWriter, r *http.Request) {
 	c := appengine.NewContext(r)
 	b, _ := ioutil.ReadAll(r.Body)
-	k := strings.Split(strings.Split(string(b), "=")[1], "/")
-	var room_key string
-	var user string
-	if len(k) == 2 {
-		room_key = k[0]
-		user = k[1]
-	}
+	re := regexp.MustCompile("[0-9]+/[0-9]+")
+	k := strings.Split(re.FindString(string(b)), "/")
+	room_key:= k[0]
+	user := k[1]
 	client_id := make_client_id(room_key, user)
 	room := new(Room)
 	err := datastore.Get(c, datastore.NewKey(c, "Room", room_key, 0, nil), room)
 	if err != nil {
 		c.Errorf("datastore: %v", err)
 	}
+	// Check if room has user in case that disconnect message comes before
+	// connect message with unknown reason, observed with local AppEngine SDK.
 	if room != nil && room.has_user(user) {
 		room.set_connected(user)
 		datastore.Put(c, datastore.NewKey(c, "Room", room_key, 0, nil), room)
-		q := datastore.NewQuery("Messages").Filter("client_id =", client_id)
+		q := datastore.NewQuery("Message").Filter("client_id =", client_id)
 		var messages []Message
 		k, err := q.GetAll(c, &messages)
 		if err != nil {
@@ -359,7 +360,7 @@ func message_page(w http.ResponseWriter, r *http.Request) {
 			// This would remove the other_user in loopback test too.
 			// So check its availability before forwarding Bye message.
 			room.remove_user(user)
-			q := datastore.NewQuery("Messages").Filter("client_id =", client_id)
+			q := datastore.NewQuery("Message").Filter("client_id =", client_id)
 			var messages []Message
 			k, err := q.GetAll(c, &messages)
 			if err != nil {
@@ -404,24 +405,69 @@ func message_page(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// The main UI page, renders the 'index.html' template.
 func main_page(w http.ResponseWriter, r *http.Request) {
+	// Renders the main page. When this page is shown, we create a new
+	// channel to push asynchronous updates to the client.
+
+	// Append strings to this list to have them thrown up in message boxes. This
+	// will also cause the app to fail.
 	c := appengine.NewContext(r)
 	q := r.URL.Query()
-	var base_url string
-	// for localhost tests
-	if r.URL.Host == "" {
-		base_url = "http://" + r.Host
-	} else {
-		base_url = r.URL.Scheme + "://" + r.URL.Host
-	}
+	error_messages := []string{}
+	var message string
 	user_agent := r.UserAgent()
 	room_key := sanitize(q.Get("r"))
-	debug := q.Get("debug")
-	unittest := q.Get("unittest")
 	stun_server := q.Get("ss")
+	if stun_server == "" {
+		stun_server = get_default_stun_server(user_agent)
+	}
 	turn_server := q.Get("ts")
-	min_re := q.Get("minre")
-	max_re := q.Get("maxre")
+
+	ts_pwd := q.Get("tp")
+
+	/*
+	 * Use "audio" and "video" to set the media stream constraints. Defined here:
+	 * http://dev.w3.org/2011/webrtc/editor/getusermedia.html#idl-def-MediaStreamConstraints
+	 *
+	 * "true" and "false" are recognized and interpreted as bools, for example:
+	 * "?audio=true&video=false" (Start an audio-only call.)
+	 * "?audio=false" (Start a video-only call.)
+	 * If unspecified, the stream constraint defaults to True.
+	 *
+	 * To specify media track constraints, pass in a comma-separated list of
+	 * key/value pairs, separated by a "=". Examples:
+	 *   "?audio=googEchoCancellation=false,googAutoGainControl=true"
+	 *   (Disable echo cancellation and enable gain control.)
+	 *
+	 *   "?video=minWidth=1280,minHeight=720,googNoiseReduction=true"
+	 *   (Set the minimum resolution to 1280x720 and enable noise reduction.)
+	 *
+	 * Keys starting with "goog" will be added to the "optional" key; all others
+	 * will be added to the "mandatory" key.
+	 *
+	 * The audio keys are defined here:
+	 * https://code.google.com/p/webrtc/source/browse/trunk/talk/app/webrtc/localaudiosource.cc
+	 *
+	 * The video keys are defined here:
+	 * https://code.google.com/p/webrtc/source/browse/trunk/talk/app/webrtc/videosource.cc
+	 */
+	audio := q.Get("audio")
+	video := q.Get("video")
+	if strings.ToLower(q.Get("hd")) == "true" {
+		if video != "" {
+			message = `The "hd" parameter has overridden video=` + string(video)
+			c.Errorf(message)
+			error_messages = append(error_messages, message)
+		}
+		video = "minWidth=1280,minHeight=720"
+	}
+	if q.Get("minre") != "" || q.Get("maxre") != "" {
+		message = `The "minre" and "maxre" parameters are no longer supported.\n
+		    Use "video" instead.`
+		c.Errorf(message)
+		error_messages = append(error_messages, message)
+	}
 	audio_send_codec := q.Get("asc")
 	if audio_send_codec == "" {
 		audio_send_codec = get_preferred_audio_send_codec(user_agent)
@@ -430,45 +476,39 @@ func main_page(w http.ResponseWriter, r *http.Request) {
 	if audio_receive_codec == "" {
 		audio_receive_codec = get_preferred_audio_receive_codec()
 	}
-	hd_video := q.Get("hd")
-	turn_url := "https://computeengineondemand.appspot.com/"
-	if strings.ToLower(hd_video) == "true" {
-		min_re = "1280x720"
-	}
-	ts_pwd := q.Get("tp")
-	media := q.Get("media")
-	compat := "true"
-	if q.Get("compat") != "" {
-		compat = q.Get("compat")
-	}
-	if debug == "loopback" {
-		compat = "false"
-	}
+	// Set stereo to false by default.
 	stereo := false
 	if q.Get("stereo") != "" {
 		if q.Get("stereo") == "true" {
 			stereo = true
 		}
 	}
-	if stun_server == "" {
-		stun_server = get_default_stun_server(user_agent)
+	// Set compat to true by default.
+	compat := "true"
+	if q.Get("compat") != "" {
+		compat = q.Get("compat")
 	}
+	debug := q.Get("debug")
+	if debug == "loopback" {
+		// Set compat to false as DTLS does not work for loopback.
+		compat = "false"
+	}
+	unittest := q.Get("unittest")
 	if unittest != "" {
+		// Always create a new room for the unit tests.
 		room_key = generate_random(8)
 	}
 	if room_key == "" {
 		room_key = generate_random(8)
-		redirect := "/?r=" + room_key
-		redirect = base_url + redirect
+		q.Set("r",room_key)
+		r.URL.RawQuery = q.Encode()
+		redirect:= r.URL.String()
 		http.Redirect(w, r, redirect, http.StatusFound)
 		c.Infof("Redirecting visitor to base URL to " + redirect)
 		return
 	}
 	room := new(Room)
 	err := datastore.Get(c, datastore.NewKey(c, "Room", room_key, 0, nil), room)
-	if err != nil {
-		c.Errorf("datastore: %v", err)
-	}
 	var user string
 	var initiator int
 	if err == datastore.ErrNoSuchEntity && debug != "full" {
@@ -501,18 +541,19 @@ func main_page(w http.ResponseWriter, r *http.Request) {
 		c.Infof("Room " + room_key + " is full")
 		return
 	}
-	var room_link string
-	if r.URL.Host == "" {
-		room_link = base_url + "/?r=" + room_key
-	} else {
-		room_link = r.URL.String()
-	}
+
+	q.Set("r",room_key)
+	r.URL.RawQuery = q.Encode()
+	room_link := r.URL.String()
+	turn_url := "https://computeengineondemand.appspot.com/"
 	turn_url = turn_url + "turn?" + "username=" + user + "&key=4080218913"
 	token, _ := channel.Create(c, make_client_id(room_key, user))
 	pc_config := make_pc_config(stun_server, turn_server, ts_pwd)
 	pc_constraints := make_pc_constraints(compat)
 	offer_constraints := make_offer_constraints()
-	media_constraints := make_media_constraints(c, media, min_re, max_re)
+	media_constraints := make_media_stream_constraints(audio, video)
+	c.Warningf(audio, video,media_constraints)
+	c.Infof("Applying media constraints: %s", media_constraints)
 	var target_page string
 	if unittest != "" {
 		target_page = "test/test_" + unittest + ".html"
@@ -521,6 +562,7 @@ func main_page(w http.ResponseWriter, r *http.Request) {
 	}
 	mainTemplate := template.Must(template.ParseFiles(target_page))
 	err = mainTemplate.Execute(w, map[string]interface{}{
+		"error_messages":      error_messages,
 		"token":               token,
 		"me":                  user,
 		"room_key":            room_key,
