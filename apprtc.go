@@ -48,7 +48,7 @@ type Constraints struct {
 }
 
 type MediaConstraints struct {
-	Audio interface{} `json:"audio,omitempty"`
+	Audio interface{} `json:"audio"`
 	Video interface{} `json:"video"`
 }
 
@@ -84,12 +84,6 @@ func generate_random(length int) string {
 		word += strconv.Itoa(rand.Intn(10))
 	}
 	return word
-}
-
-func randomInt(min int, max int) int {
-	var bytes int
-	bytes = min + rand.Intn(max)
-	return int(bytes)
 }
 
 func sanitize(key string) string {
@@ -130,7 +124,6 @@ func make_pc_config(stun_server, turn_server, ts_pwd string) interface{} {
 	if stun_server != "" {
 		cfgs = append(cfgs, Config{Url: "stun:" + stun_server})
 	}
-
 	return &ICE{IceServers: cfgs}
 }
 
@@ -187,7 +180,7 @@ func make_pc_constraints(compat string) interface{} {
 
 func make_offer_constraints() interface{} {
 	var constraints *Constraints
-	constraints = &Constraints{Optional: []Options{}}
+	constraints = &Constraints{Optional: []Options{}, Mandatory: map[string]string{}}
 	return constraints
 }
 
@@ -299,7 +292,7 @@ func disconnected_page(w http.ResponseWriter, r *http.Request) {
 			datastore.Delete(c, datastore.NewKey(c, "Room", room_key, 0, nil))
 		}
 		c.Infof("User %s removed from room %s", user, room_key)
-		c.Infof("Room %s has state %q", room_key, room)
+		c.Infof("Room %s has state %v", room_key, room)
 		if other_user != "" && other_user != user {
 			channel.Send(c, room_key+"/"+other_user, `{"type": "bye"}`)
 			c.Infof("Sent BYE to %s", other_user)
@@ -338,7 +331,7 @@ func connect_page(w http.ResponseWriter, r *http.Request) {
 			datastore.Delete(c, datastore.NewKey(c, k[i].Kind(), k[i].StringID(), k[i].IntID(), nil))
 		}
 		c.Infof("User %s connected to room %s", user, room_key)
-		c.Infof("Room %s has state %q", room_key, room)
+		c.Infof("Room %s has state %v", room_key, room)
 	} else {
 		c.Warningf("Unexpected Connect Message to room %s", room_key)
 	}
@@ -377,7 +370,7 @@ func message_page(w http.ResponseWriter, r *http.Request) {
 				datastore.Delete(c, datastore.NewKey(c, "Room", room_key, 0, nil))
 			}
 			c.Infof("User %s quit from room %s", user, room_key)
-			c.Infof("Room %s has state %q", room_key, room)
+			c.Infof("Room %s has state %v", room_key, room)
 		}
 		if other_user != "" && room.has_user(other_user) {
 			if message.Type == "offer" {
@@ -410,11 +403,10 @@ func message_page(w http.ResponseWriter, r *http.Request) {
 func main_page(w http.ResponseWriter, r *http.Request) {
 	// Renders the main page. When this page is shown, we create a new
 	// channel to push asynchronous updates to the client.
-
-	// Append strings to this list to have them thrown up in message boxes. This
-	// will also cause the app to fail.
 	c := appengine.NewContext(r)
 	q := r.URL.Query()
+	// Append strings to this list to have them thrown up in message boxes. This
+	// will also cause the app to fail.
 	error_messages := []string{}
 	var message string
 	user_agent := r.UserAgent()
@@ -464,8 +456,7 @@ func main_page(w http.ResponseWriter, r *http.Request) {
 		video = "minWidth=1280,minHeight=720"
 	}
 	if q.Get("minre") != "" || q.Get("maxre") != "" {
-		message = `The "minre" and "maxre" parameters are no longer supported.\n
-		    Use "video" instead.`
+		message = `The "minre" and "maxre" parameters are no longer supported. Use "video" instead.`
 		c.Errorf(message)
 		error_messages = append(error_messages, message)
 	}
@@ -553,7 +544,7 @@ func main_page(w http.ResponseWriter, r *http.Request) {
 	pc_constraints := make_pc_constraints(compat)
 	offer_constraints := make_offer_constraints()
 	media_constraints := make_media_stream_constraints(audio, video)
-	c.Infof("Applying media constraints: %s", media_constraints)
+	c.Infof("Applying media constraints: %v", media_constraints)
 	var target_page string
 	if unittest != "" {
 		target_page = "test/test_" + unittest + ".html"
@@ -581,7 +572,7 @@ func main_page(w http.ResponseWriter, r *http.Request) {
 		c.Errorf("mainTemplate: %v", err)
 	}
 	c.Infof("User %s added to room %s", user, room_key)
-	c.Infof("Room %s has state %q", room_key, room)
+	c.Infof("Room %s has state %v", room_key, room)
 }
 
 /*
@@ -621,17 +612,13 @@ func turn(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 	  c.Errorf("Unmarshal: %v", err)
 	}	
-	
         w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Access-Control-Allow-Origin", "https://goapprtc.appspot.com")
-	
+	w.Header().Set("Access-Control-Allow-Origin", "https://goapprtc.appspot.com")	
         w.WriteHeader(http.StatusOK)
-
         enc := json.NewEncoder(w)
         if err := enc.Encode(data); err != nil {
                 c.Errorf("Encode: %v", err)
-        }
-	
+        }	
 }
 
 func init() {
