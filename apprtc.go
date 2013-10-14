@@ -2,9 +2,9 @@
  * WebRTC Demo
  *
  * This module demonstrates the WebRTC API by implementing a simple video chat app.
- * 
+ *
  * Rewritten in Golang by Daniel G. Vargas
- * Based on http://webrtc.googlecode.com/svn/trunk/samples/js/apprtc/apprtc.py (rev.4950)
+ * Based on http://webrtc.googlecode.com/svn/trunk/samples/js/apprtc/apprtc.py (rev.4955)
  * Look browser support on http://iswebrtcreadyyet.com/
  *
  */
@@ -16,6 +16,7 @@ import (
 	"io/ioutil"
 	"math/rand"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -24,6 +25,7 @@ import (
 	"appengine"
 	"appengine/channel"
 	"appengine/datastore"
+	"appengine/urlfetch"
 	"github.com/gorilla/mux"
 )
 
@@ -39,20 +41,17 @@ type ICE struct {
 type Options struct {
 	DtlsSrtpKeyAgreement bool
 }
+
 type Constraints struct {
-	Optional  []Options `json:"optional"`
-	Mandatory Mand      `json:"mandatory,omitempty"`
+	Optional  interface{} `json:"optional"`
+	Mandatory interface{} `json:"mandatory,omitempty"`
 }
-type Mand struct {
-	MinWidth  string `json:"minWidth,omitempty"`
-	MaxWidth  string `json:"maxWidth,omitempty"`
-	MinHeight string `json:"minHeight,omitempty"`
-	MaxHeight string `json:"maxHeight,omitempty"`
-}
+
 type MediaConstraints struct {
 	Audio interface{} `json:"audio,omitempty"`
 	Video interface{} `json:"video"`
 }
+
 type SDP struct {
 	Type      string `json:"type"`
 	Sdp       string `json:"sdp,omitempty"`
@@ -142,26 +141,28 @@ func make_loopback_answer(message string) string {
 }
 
 func make_media_track_constraints(constraints string) interface{} {
-	type c struct {
-		Mandatory interface{}
-		Optional  []string
-	}
 	var track_constraints interface{}
+	optl := make([]map[string]string, 0)
+	mand := map[string]string{}
 	if constraints == "" || strings.ToLower(constraints) == "true" {
 		track_constraints = true
 	} else if strings.ToLower(constraints) == "false" {
 		track_constraints = false
 	} else {
-		track_constraints = &c{Mandatory: []string{}, Optional: []string{}}
-		/*constraint := strings.Split(track_constraints, "=")
-		if len(constraint) != 2 {
-			panic("Ignoring malformed constraint: ", constraint)
+		constraints_ := strings.Split(constraints, ",")
+		for i := 0; i < len(constraints_); i++ {
+			c := strings.Split(constraints_[i], "=")
+			if len(c) == 2 {
+				if strings.Contains(c[0], "goog") {
+					optl = append(optl, map[string]string{c[0]: c[1]})
+				} else {
+					mand[c[0]] = c[1]
+				}
+			} /*else {
+				panic("Ignoring malformed constraint: " + constraints)
+			}*/
 		}
-		if strings.Contains(constraint[0],"goog"){
-		    track_constraints["optional"] = append(c, {constraint[0]: constraint[1]})
-		  } else {
-		    track_constraints["mandatory"][constraint[0]] = constraint[1]
-		  }*/
+		track_constraints = &Constraints{Optional: optl, Mandatory: mand}
 	}
 	return track_constraints
 }
@@ -271,7 +272,7 @@ func disconnected_page(w http.ResponseWriter, r *http.Request) {
 	b, _ := ioutil.ReadAll(r.Body)
 	re := regexp.MustCompile("[0-9]+/[0-9]+")
 	k := strings.Split(re.FindString(string(b)), "/")
-	room_key:= k[0]
+	room_key := k[0]
 	user := k[1]
 	client_id := make_client_id(room_key, user)
 	room := new(Room)
@@ -312,7 +313,7 @@ func connect_page(w http.ResponseWriter, r *http.Request) {
 	b, _ := ioutil.ReadAll(r.Body)
 	re := regexp.MustCompile("[0-9]+/[0-9]+")
 	k := strings.Split(re.FindString(string(b)), "/")
-	room_key:= k[0]
+	room_key := k[0]
 	user := k[1]
 	client_id := make_client_id(room_key, user)
 	room := new(Room)
@@ -456,7 +457,7 @@ func main_page(w http.ResponseWriter, r *http.Request) {
 	video := q.Get("video")
 	if strings.ToLower(q.Get("hd")) == "true" {
 		if video != "" {
-			message = `The "hd" parameter has overridden video=` + string(video)
+			message = `The "hd" parameter has overridden video=` + video
 			c.Errorf(message)
 			error_messages = append(error_messages, message)
 		}
@@ -500,9 +501,9 @@ func main_page(w http.ResponseWriter, r *http.Request) {
 	}
 	if room_key == "" {
 		room_key = generate_random(8)
-		q.Set("r",room_key)
+		q.Set("r", room_key)
 		r.URL.RawQuery = q.Encode()
-		redirect:= r.URL.String()
+		redirect := r.URL.String()
 		http.Redirect(w, r, redirect, http.StatusFound)
 		c.Infof("Redirecting visitor to base URL to " + redirect)
 		return
@@ -542,17 +543,16 @@ func main_page(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	q.Set("r",room_key)
+	q.Set("r", room_key)
 	r.URL.RawQuery = q.Encode()
 	room_link := r.URL.String()
-	turn_url := "https://computeengineondemand.appspot.com/"
+	turn_url := "https://goapprtc.appspot.com/"
 	turn_url = turn_url + "turn?" + "username=" + user + "&key=4080218913"
 	token, _ := channel.Create(c, make_client_id(room_key, user))
 	pc_config := make_pc_config(stun_server, turn_server, ts_pwd)
 	pc_constraints := make_pc_constraints(compat)
 	offer_constraints := make_offer_constraints()
 	media_constraints := make_media_stream_constraints(audio, video)
-	c.Warningf(audio, video,media_constraints)
 	c.Infof("Applying media constraints: %s", media_constraints)
 	var target_page string
 	if unittest != "" {
@@ -584,9 +584,60 @@ func main_page(w http.ResponseWriter, r *http.Request) {
 	c.Infof("Room %s has state %q", room_key, room)
 }
 
+/*
+ *  CORS WORKAROUND: computeengineondemand access-control-allow-origin: https://apprtc.appspot.com
+ */
+
+type Turn struct {
+  Username	string		`json:"username"`
+  Password	string		`json:"password"`
+  Uris		[]string 	`json:"uris"`
+}
+
+func turn(w http.ResponseWriter, r *http.Request) {
+	username := r.URL.Query().Get("username")
+	key := r.URL.Query().Get("key")
+	c := appengine.NewContext(r)
+	fetcher := urlfetch.Client(c)
+	u, _ := url.Parse("https://computeengineondemand.appspot.com/turn")
+	q := u.Query()
+	if username != "" {
+	  q.Set("username", username)
+	}
+	if key != "" {
+	  q.Set("key", key)
+	}
+	u.RawQuery = q.Encode()
+	res, err := fetcher.Get(u.String())
+	if err != nil {
+	  c.Errorf("Fetch: %v", err)
+	}
+	body, err := ioutil.ReadAll(res.Body)
+	if err != nil {
+	  c.Errorf("ReadAll: %v", err)
+	}
+	var data Turn
+	err = json.Unmarshal(body, &data)
+	if err != nil {
+	  c.Errorf("Unmarshal: %v", err)
+	}	
+	
+        w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "https://goapprtc.appspot.com")
+	
+        w.WriteHeader(http.StatusOK)
+
+        enc := json.NewEncoder(w)
+        if err := enc.Encode(data); err != nil {
+                c.Errorf("Encode: %v", err)
+        }
+	
+}
+
 func init() {
 	m := mux.NewRouter()
 	m.HandleFunc("/", main_page).Methods("GET")
+	m.HandleFunc("/turn", turn).Methods("GET")
 	m.HandleFunc("/message", message_page).Methods("POST")
 	m.HandleFunc("/_ah/channel/connected/", connect_page).Methods("POST")
 	m.HandleFunc("/_ah/channel/disconnected/", disconnected_page).Methods("POST")

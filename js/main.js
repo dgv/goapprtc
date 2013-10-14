@@ -76,7 +76,7 @@ function maybeRequestTurn() {
 
   var currentDomain = document.domain;
   if (currentDomain.search('localhost') === -1 &&
-      currentDomain.search('apprtc') === -1) {
+      currentDomain.search('goapprtc') === -1) {
     // Not authorized domain. Try with default STUN instead.
     turnDone = true;
     return;
@@ -86,6 +86,9 @@ function maybeRequestTurn() {
   xmlhttp = new XMLHttpRequest();
   xmlhttp.onreadystatechange = onTurnResult;
   xmlhttp.open('GET', turnUrl, true);
+  //access-control-allow-origin:https://apprtc.appspot.com =(
+  //xmlhttp.setRequestHeader('Access-Control-Allow-Origin', '*'); 
+  //xmlhttp.setRequestHeader('Access-Control-Allow-Methods', 'GET');
   xmlhttp.send();
 }
 
