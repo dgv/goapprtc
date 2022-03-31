@@ -78,7 +78,8 @@ const (
 	   WSS_HOST_PORT_PAIRS = [ins[WSS_INSTANCE_HOST_KEY] for ins in WSS_INSTANCES]
 	*/
 	// memcache key for the active collider host.
-	WSS_HOST_ACTIVE_HOST_KEY = "wss_host_active_host"
+	WSS_HOST_PORT_PAIRS      = ""
+	WSS_HOST_ACTIVE_HOST_KEY = ""
 
 	// Dictionary keys in the collider probing result.
 	WSS_HOST_IS_UP_KEY         = "is_up"
@@ -109,6 +110,8 @@ type ICE struct {
 
 type Options struct {
 	DtlsSrtpKeyAgreement bool
+	googDscp             bool
+	googIPv6             bool
 }
 
 type Constraints struct {
@@ -119,6 +122,7 @@ type Constraints struct {
 type MediaConstraints struct {
 	Audio interface{} `json:"audio"`
 	Video interface{} `json:"video"`
+	Fake  interface{} `json:"fake"`
 }
 
 type SDP struct {
@@ -237,21 +241,7 @@ func makeMediaTrackConstraints(constraints string) interface{} {
 }
 
 func makeMediaStreamConstraints(audio, video, firefoxFakeDevice string) interface{} {
-	return &MediaConstraints{Audio: makeMediaTrackConstraints(audio), Video: makeMediaTrackConstraints(video)}
-}
-
-func makePcConstraints(dtls, dscp, ipv6 string) interface{} {
-	var constraints *Constraints
-	constraints = &Constraints{Optional: []Options{}}
-	// For interop with FireFox. Enable DTLS in peerConnection ctor.
-	if strings.ToLower(dtls) == "true" {
-		constraints = &Constraints{Optional: []Options{{DtlsSrtpKeyAgreement: true}}}
-		// Disable DTLS in peerConnection ctor for loopback call. The value
-		// of compat is false for loopback mode.
-	} else {
-		constraints = &Constraints{Optional: []Options{{DtlsSrtpKeyAgreement: false}}}
-	}
-	return constraints
+	return &MediaConstraints{Audio: makeMediaTrackConstraints(audio), Video: makeMediaTrackConstraints(video), Fake: makeMediaTrackConstraints(firefoxFakeDevice)}
 }
 
 func makeOfferConstraints() interface{} {
@@ -475,6 +465,56 @@ func messagePage(w http.ResponseWriter, r *http.Request) {
 	}
 }
 */
+
+func makePcConstraints(dtls, dscp, ipv6 string) interface{} {
+	var constraints *Constraints
+	var _dtls, _dscp, _ipv6 bool
+	constraints = &Constraints{Optional: []Options{}}
+	if strings.ToLower(dtls) == "true" {
+		_dtls = true
+	}
+	if strings.ToLower(dscp) == "true" {
+		_dscp = true
+	}
+	if strings.ToLower(ipv6) == "true" {
+		_ipv6 = true
+	}
+	constraints = &Constraints{Optional: []Options{{DtlsSrtpKeyAgreement: _dtls, googDscp: _dscp, googIPv6: _ipv6}}}
+	return constraints
+}
+
+func maybeUseHttpsHostUrl(r *http.Request) string {
+	q := r.URL.Query()
+	if q.Get("wstls") == "true" && r.URL.Scheme == "http" {
+		// Assume AppRTC is running behind a stunnel proxy and fix base URL.
+		return strings.Replace(r.URL.Host, "http:", "https:", 1)
+	}
+	return r.URL.Host
+}
+
+func getWssParameters(r *http.Request) (wssUrl, wssPostUrl string) {
+	q := r.URL.Query()
+	wssHostPortPair := q.Get("wshpp")
+	wssTls := q.Get("wstls")
+
+	if wssHostPortPair == "" {
+		wssActiveHost := WSS_HOST_ACTIVE_HOST_KEY
+		if strings.Contains(WSS_HOST_PORT_PAIRS, wssActiveHost) {
+			wssHostPortPair = WSS_HOST_PORT_PAIRS
+		} else {
+			// logging warn
+			wssHostPortPair = strings.Split(WSS_HOST_PORT_PAIRS, ",")[0]
+		}
+	}
+	if wssTls == "false" {
+		wssUrl = "ws://" + wssHostPortPair + "/ws"
+		wssPostUrl = "http://" + wssHostPortPair
+	} else {
+		wssUrl = "wss://" + wssHostPortPair + "/ws"
+		wssPostUrl = "https://" + wssHostPortPair
+	}
+	return
+}
 
 // Returns appropriate room parameters based on query parameters in the request.
 // TODO(tkchin): move query parameter parsing to JS code.
