@@ -77,7 +77,7 @@ const (
 
 	   WSS_HOST_PORT_PAIRS = [ins[WSS_INSTANCE_HOST_KEY] for ins in WSS_INSTANCES]
 	*/
-	// memcache key for the active collider host.
+	// memcache key for the active collider host.iceServers
 	WSS_HOST_PORT_PAIRS      = ""
 	WSS_HOST_ACTIVE_HOST_KEY = ""
 
@@ -100,12 +100,10 @@ var (
 )
 
 type Config struct {
-	Url        string `json:"url,omitempty"`
-	Credential string `json:"credential,omitempty"`
-}
-
-type ICE struct {
-	IceServers []Config `json:"iceServers,omitempty"`
+	IceServers    []string `json:"iceServers,omitempty"`
+	IceTransports []string `json:"iceTransports,omitempty"`
+	BundlePolicy  string   `json:"bundlePolicy,omitempty"`
+	RtcpMuxPolicy string   `json:"rtcpMuxPolicy,omitempty"`
 }
 
 type Options struct {
@@ -175,18 +173,16 @@ func makeClientId(room, user string) string {
 	return room + "/" + user
 }
 
+/*
 func getDefaultStunServer(user_agent string) string {
 	var default_stun_server string
 	default_stun_server = "stun.l.google.com:19302"
 	if strings.Contains(user_agent, "Firefox") {
 		default_stun_server = "stun.services.mozilla.com"
 	}
-	return default_stun_server
+	return
 }
-
-func getPreferredAudioReceiveCodec() string {
-	return "opus/48000"
-}
+*/
 
 func getPreferredAudioSendCodec(user_agent string) string {
 	var preferred_audio_send_codec = ""
@@ -196,15 +192,11 @@ func getPreferredAudioSendCodec(user_agent string) string {
 	return preferred_audio_send_codec
 }
 
-func makePcConfig(stun_server, turn_server, ts_pwd string) interface{} {
-	cfgs := make([]Config, 0)
-	if turn_server != "" {
-		cfgs = append(cfgs, Config{Url: "turn:" + turn_server, Credential: ts_pwd})
-	}
-	if stun_server != "" {
-		cfgs = append(cfgs, Config{Url: "stun:" + stun_server})
-	}
-	return &ICE{IceServers: cfgs}
+func makePcConfig(iceTransports, iceServerOverride string) interface{} {
+	return Config{IceServers: strings.Split(iceServerOverride, ","),
+		IceTransports: strings.Split(iceTransports, ","),
+		BundlePolicy:  "max-bundle",
+		RtcpMuxPolicy: "require"}
 }
 
 func makeLoopbackAnswer(message string) string {
@@ -697,7 +689,7 @@ func getRoomParameters(r *http.Request, roomId, clientId string, isInitiator boo
 		//turn_url = turn_url + "turn?" + "username=" + user + "&key=4080218913"
 		//token, _ := channel.Create(c, make_client_id(room_key, user))
 	*/
-	pcConfig := makePcConfig(iceTransports, ICE_SERVER_OVERRIDE, "")
+	pcConfig := makePcConfig(iceTransports, ICE_SERVER_OVERRIDE)
 	pcConstraints := makePcConstraints(dtls, dscp, ipv6)
 	//offerOptions := makeOfferConstraints()
 	mediaConstraints := makeMediaStreamConstraints(audio, video, firefoxFakeDevice)
@@ -832,6 +824,32 @@ func iceConfigurationPage(w http.ResponseWriter, r *http.Request) {
 	return &ICE{IceServers: cfgs}
 
 	var data ICE
+	err = json.Unmarshal(body, &data)
+	if err != nil {	var data ICE
+	err = json.Unmarshal(body, &data)
+	if err != nil {
+		c.Errorf("Unmarshal: %v", err)
+	}
+	w.Header().Set("Content-Type", "application/json")
+	//w.Header().Set("Access-Control-Allow-Origin", "https://goapprtc.appspot.com")
+	w.WriteHeader(http.StatusOK)
+	enc := json.NewEncoder(w)
+	if err := enc.Encode(data); err != nil {
+		c.Errorf("Encode: %v", err)
+	}
+	enc := json.NewEncoder(w)
+	if err := enc.Encode(data); err != nil {
+		c.Errorf("Encode: %v", err)
+	}
+}
+
+
+func paramsPage(w http.ResponseWriter, r *http.Request) {
+	var data ICE
+	params, err := getRoomParameters(r, "", "", false)
+	if err != nil {
+		log.Printf("getRoomParameters: %v", err)
+	}
 	err = json.Unmarshal(body, &data)
 	if err != nil {
 		c.Errorf("Unmarshal: %v", err)
