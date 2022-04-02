@@ -11,6 +11,7 @@
 package main
 
 import (
+	"fmt"
 	"html/template"
 	"log"
 	"math/rand"
@@ -96,7 +97,8 @@ const (
 )
 
 var (
-	HEADER_MESSAGE = os.Getenv("HEADER_MESSAGE")
+	HEADER_MESSAGE     = os.Getenv("HEADER_MESSAGE")
+	ICE_SERVER_API_KEY = os.Getenv("ICE_SERVER_API_KEY")
 )
 
 type Config struct {
@@ -394,6 +396,7 @@ func connectPage(w http.ResponseWriter, r *http.Request) {
 	}
 }
 */
+
 /*
 func messagePage(w http.ResponseWriter, r *http.Request) {
 	//c := appengine.NewContext(r)
@@ -510,13 +513,13 @@ func getWssParameters(r *http.Request) (wssUrl, wssPostUrl string) {
 
 // Returns appropriate room parameters based on query parameters in the request.
 // TODO(tkchin): move query parameter parsing to JS code.
-func getRoomParameters(r *http.Request, roomId, clientId string, isInitiator bool) (params map[string]interface{}, err error) {
+func getRoomParameters(r *http.Request, roomId, clientId, isInitiator string) (params map[string]interface{}, err error) {
 	q := r.URL.Query()
 	// Append strings to this list to have them thrown up in message boxes. This
 	// will also cause the app to fail.
 	errorMessages := []string{}
-	var message string
-	// Get the base url without arguments.
+	warningMessages := []string{}
+	var iceServerUrl, message string
 	userAgent := r.UserAgent()
 
 	//  HTML or JSON.
@@ -577,7 +580,7 @@ func getRoomParameters(r *http.Request, roomId, clientId string, isInitiator boo
 	if hd != "" && video != "" {
 		message = `The "hd" parameter has overridden video=` + video
 		log.Println(message)
-		errorMessages = append(errorMessages, message)
+		warningMessages = append(warningMessages, message)
 		if hd == "true" {
 			video = "mandatory:minWidth=1280,mandatory:minHeight=720"
 		}
@@ -590,26 +593,8 @@ func getRoomParameters(r *http.Request, roomId, clientId string, isInitiator boo
 	if q.Get("minre") != "" || q.Get("maxre") != "" {
 		message = `The "minre" and "maxre" parameters are no longer supported. Use "video" instead.`
 		log.Println(message)
-		errorMessages = append(errorMessages, message)
+		warningMessages = append(warningMessages, message)
 	}
-
-	/*
-		audioSendCodec := q.Get("asc")
-		if audioSendCodec == "" {
-			audioSendCodec = getPreferredAudioSendCodec(userAgent)
-		}
-		audioReceiveCodec := q.Get("arc")
-		if audioReceiveCodec == "" {
-			audioReceiveCodec = getPreferredAudioReceiveCodec()
-		}
-
-			stereo := false
-			if q.Get("stereo") != "" {
-				if q.Get("stereo") == "true" {
-					stereo = true
-				}
-			}
-	*/
 
 	//  Options for controlling various networking features.
 	dtls := q.Get("dtls")
@@ -629,104 +614,53 @@ func getRoomParameters(r *http.Request, roomId, clientId string, isInitiator boo
 	//  TODO(tkchin): We want to provide a ICE request url on the initial get,
 	//  but we don't provide client_id until a join. For now just generate
 	//  a random id, but we should make this better.
-
-	/*
-		unittest := q.Get("unittest")
-		if unittest != "" {
-			// Always create a new room for the unit tests.
-			roomKey = generateRandom(8)
+	if len(iceServerBaseUrl) > 0 {
+		apiKey := q.Get("apikey")
+		if apiKey == "" {
+			apiKey = ICE_SERVER_API_KEY
 		}
-			if roomKey == "" {
-				roomKey = generateRandom(8)
-				q.Set("r", roomKey)
-				r.URL.RawQuery = q.Encode()
-				redirect := r.URL.String()
-				http.Redirect(w, r, redirect, http.StatusFound)
-				//c.Infof("Redirecting visitor to base URL to " + redirect)
-				return
-			}
-	*/
-	//room := new(Room)
-	//err := datastore.Get(c, datastore.NewKey(c, "Room", room_key, 0, nil), room)
-	//var user string
-	//var initiator int
-	/*
-			if debug != "full" {
-				// New room.
-				user = generateRandom(8)
-				room.addUser(user)
-				if debug != "loopback" {
-					initiator = 0
-				} else {
-					room.addUser(user)
-					initiator = 1
-				}
-
-				//	_, err := datastore.Put(c, datastore.NewKey(c, "Room", room_key, 0, nil), room)
-				if err != nil {
-					//	c.Errorf("datastore: %v", err)
-				}
-			} else if room != nil && room.getOccupancy() == 1 && debug != "full" {
-				// 1 occupant.
-				user = generateRandom(8)
-				room.addUser(user)
-				//_, err := datastore.Put(c, datastore.NewKey(c, "Room", room_key, 0, nil), room)
-				if err != nil {
-					//		c.Errorf("datastore: %v", err)
-				}
-				initiator = 1
-			} else {
-				// 2 occupants (full).
-				var template = template.Must(template.ParseFiles("full.html"))
-				template.Execute(w, map[string]string{})
-				//c.Infof("Room " + room_key + " is full")
-				return
-			}
-		q.Set("r", roomKey)
-		r.URL.RawQuery = q.Encode()
-		//roomLink := r.URL.String()
-		//turnUrl := "https://goapprtc.appspot.com/"
-		//turn_url = turn_url + "turn?" + "username=" + user + "&key=4080218913"
-		//token, _ := channel.Create(c, make_client_id(room_key, user))
-	*/
+		iceServerUrl = fmt.Sprintf("%s/v1alpha/iceconfig?key=%s", iceServerBaseUrl, apiKey)
+	}
+	//  If defined it will override the ICE server provider and use the specified
+	//  turn servers directly.
 	pcConfig := makePcConfig(iceTransports, ICE_SERVER_OVERRIDE)
 	pcConstraints := makePcConstraints(dtls, dscp, ipv6)
-	//offerOptions := makeOfferConstraints()
 	mediaConstraints := makeMediaStreamConstraints(audio, video, firefoxFakeDevice)
-	log.Printf("Applying media constraints: %v", mediaConstraints)
+	wssUrl, wssPostUrl := getWssParameters(r)
+
+	bypassJoinConfirmation := os.Getenv("BYPASS_JOIN_CONFIRMATION") == "True"
 
 	params = map[string]interface{}{
-		"header_message": HEADER_MESSAGE,
-		"error_messages": errorMessages,
-		//	"warning_messages":         warningMessages,
-		"is_loopback":    debug == "loopback",
-		"pc_config":      pcConfig,
-		"pc_constraints": pcConstraints,
-		//"offer_options":            offerOptions,
-		"media_constraints": mediaConstraints,
-		//"ice_server_url":           iceServerUrl,
-		"ice_server_transports": iceServerTransports,
-		"include_loopback_js":   includeLoopbackJs,
-		//"wss_url":                  wssUrl,
-		//"wss_post_url":             wssPostUrl,
-		//"bypass_join_confirmation": bypassJoinConfirmation,
-		//"audio_receive_codec":      audioReceiveCodec,
-		//"version_info":		   getVersionInfo(),
+		"header_message":           HEADER_MESSAGE,
+		"error_messages":           errorMessages,
+		"warning_messages":         warningMessages,
+		"is_loopback":              debug == "loopback",
+		"pc_config":                pcConfig,
+		"pc_constraints":           pcConstraints,
+		"offer_options":            "{}",
+		"media_constraints":        mediaConstraints,
+		"ice_server_url":           iceServerUrl,
+		"ice_server_transports":    iceServerTransports,
+		"include_loopback_js":      includeLoopbackJs,
+		"wss_url":                  wssUrl,
+		"wss_post_url":             wssPostUrl,
+		"bypass_join_confirmation": bypassJoinConfirmation,
+		"version_info":             os.Getenv("VERSION_INFO"),
 	}
-	/*
-		if roomId != "" {
-			roomLink := maybeUseHttpsHostUrl(r) + "/r/" + roomId
-			room_link = appendUrlArguments(r, roomLink)
-			params["room_id"] = roomId
-			params["room_link"] = roomLink
-		}
-		if clientId != "" {
-			params["client_id"] = clientId
-		}
-		if isInitiator {
-			params["is_initiator"] = is_initiator
-		}
-	*/
+
+	if roomId != "" {
+		roomLink := maybeUseHttpsHostUrl(r) + "/r/" + roomId
+		//roomLink = appendUrlArguments(r, roomLink)
+		params["room_id"] = roomId
+		params["room_link"] = roomLink
+	}
+	if clientId != "" {
+		params["client_id"] = clientId
+	}
+	if isInitiator != "" {
+		params["is_initiator"] = isInitiator
+	}
+
 	return
 }
 
@@ -754,7 +688,7 @@ func checkIfRedirect(w http.ResponseWriter, r *http.Request) {
 // The main UI page, renders the 'index_template.html' template.
 func mainPage(w http.ResponseWriter, r *http.Request) {
 	//checkIfRedirect(r)
-	params, err := getRoomParameters(r, "", "", false)
+	params, err := getRoomParameters(r, "", "", "")
 	if err != nil {
 		log.Printf("getRoomParameters: %v", err)
 	}
