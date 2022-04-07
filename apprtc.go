@@ -11,6 +11,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"log"
@@ -660,7 +661,6 @@ func getRoomParameters(r *http.Request, roomId, clientId, isInitiator string) (p
 	if isInitiator != "" {
 		params["is_initiator"] = isInitiator
 	}
-
 	return
 }
 
@@ -697,8 +697,6 @@ func mainPage(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Printf("mainTemplate: %v", err)
 	}
-	//c.Infof("User %s added to room %s", user, room_key)
-	//c.Infof("Room %s has state %v", room_key, room)
 }
 
 /*
@@ -746,7 +744,7 @@ func turn(w http.ResponseWriter, r *http.Request) {
 		c.Errorf("Encode: %v", err)
 	}
 }
-
+*/
 func iceConfigurationPage(w http.ResponseWriter, r *http.Request) {
 	cfgs := make([]Config, 0)
 	if turn_server != "" {
@@ -777,33 +775,32 @@ func iceConfigurationPage(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-
 func paramsPage(w http.ResponseWriter, r *http.Request) {
-	var data ICE
-	params, err := getRoomParameters(r, "", "", false)
+	var data map[string]interface{}
+	params, err := getRoomParameters(r, "", "", "")
 	if err != nil {
 		log.Printf("getRoomParameters: %v", err)
 	}
-	err = json.Unmarshal(body, &data)
+	err = json.Marshal(params, &data)
 	if err != nil {
-		c.Errorf("Unmarshal: %v", err)
+		log.Printf("Unmarshal: %v", err)
 	}
 	w.Header().Set("Content-Type", "application/json")
 	//w.Header().Set("Access-Control-Allow-Origin", "https://goapprtc.appspot.com")
 	w.WriteHeader(http.StatusOK)
 	enc := json.NewEncoder(w)
 	if err := enc.Encode(data); err != nil {
-		c.Errorf("Encode: %v", err)
+		log.Printf("Encode: %v", err)
 	}
 }
-*/
+
 func main() {
 	http.HandleFunc("/", mainPage)
 	//http.HandleFunc("/join/", joinPage)
 	//http.HandleFunc("/leave/", leavePage)
 	//http.HandleFunc("/message/", messagePage)
-	//http.HandleFunc("/params", paramsPage)
-	//http.HandleFunc("/v1alpha/iceconfig", iceConfigurationPage)
+	http.HandleFunc("/params", paramsPage)
+	http.HandleFunc("/v1alpha/iceconfig", iceConfigurationPage)
 	//http.HandleFunc("/r/", roomPage)
 	// collider need websocket support not available on appengine standard
 	/*
