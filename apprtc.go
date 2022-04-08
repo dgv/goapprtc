@@ -744,7 +744,7 @@ func turn(w http.ResponseWriter, r *http.Request) {
 		c.Errorf("Encode: %v", err)
 	}
 }
-*/
+
 func iceConfigurationPage(w http.ResponseWriter, r *http.Request) {
 	cfgs := make([]Config, 0)
 	if turn_server != "" {
@@ -774,19 +774,18 @@ func iceConfigurationPage(w http.ResponseWriter, r *http.Request) {
 		c.Errorf("Encode: %v", err)
 	}
 }
-
+*/
 func paramsPage(w http.ResponseWriter, r *http.Request) {
-	var data map[string]interface{}
+	//var data map[string]interface{}
 	params, err := getRoomParameters(r, "", "", "")
 	if err != nil {
 		log.Printf("getRoomParameters: %v", err)
 	}
-	err = json.Marshal(params, &data)
+	data, err := json.Marshal(params)
 	if err != nil {
 		log.Printf("Unmarshal: %v", err)
 	}
 	w.Header().Set("Content-Type", "application/json")
-	//w.Header().Set("Access-Control-Allow-Origin", "https://goapprtc.appspot.com")
 	w.WriteHeader(http.StatusOK)
 	enc := json.NewEncoder(w)
 	if err := enc.Encode(data); err != nil {
@@ -800,7 +799,7 @@ func main() {
 	//http.HandleFunc("/leave/", leavePage)
 	//http.HandleFunc("/message/", messagePage)
 	http.HandleFunc("/params", paramsPage)
-	http.HandleFunc("/v1alpha/iceconfig", iceConfigurationPage)
+	//http.HandleFunc("/v1alpha/iceconfig", iceConfigurationPage)
 	//http.HandleFunc("/r/", roomPage)
 	// collider need websocket support not available on appengine standard
 	/*
