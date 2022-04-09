@@ -144,12 +144,20 @@ type Message struct {
 	Msg       []byte `datastore:"msg"`
 }
 
+type Client struct {
+	id          string
+	isInitiator bool
+	messages    []string
+}
+
+var rooms = map[string]Room{}
+
 // All the data we store for a room
 type Room struct {
-	User1           string `datastore:"user1"`
-	User2           string `datastore:"user2"`
-	User1_Connected bool   `datastore:"user1_connected"`
-	User2_Connected bool   `datastore:"user2_connected"`
+	id         string
+	clients    []Client
+	occupancy  int
+	isLoopback bool
 }
 
 func generateRandom(length int) string {
@@ -247,16 +255,10 @@ func makeOfferConstraints() interface{} {
 }
 
 func (r *Room) getOccupancy() int {
-	occupancy := 0
-	if r.User1 != "" {
-		occupancy += 1
-	}
-	if r.User2 != "" {
-		occupancy += 1
-	}
-	return occupancy
+	return r.occupancy
 }
 
+/*
 func (r *Room) getOtherUser(user string) string {
 	if user == r.User1 {
 		return r.User2
@@ -321,7 +323,7 @@ func (r *Room) isConnected(user string) bool {
 	}
 	return false
 }
-
+*/
 /*Distp.ResponseWriter, r *http.Request) {
 	b, _ := ioutil.ReadAll(r.Body)
 	re := regexp.MustCompile("[0-9]+/[0-9]+")
@@ -397,9 +399,7 @@ func connectPage(w http.ResponseWriter, r *http.Request) {
 		c.Warningf("Unexpected Connect Message to room %s", room_key)
 	}
 }
-*/
 
-/*
 func messagePage(w http.ResponseWriter, r *http.Request) {
 	//c := appengine.NewContext(r)
 	room_key := r.URL.Query().Get("r")
@@ -462,7 +462,6 @@ func messagePage(w http.ResponseWriter, r *http.Request) {
 	}
 }
 */
-
 func makePcConstraints(dtls, dscp, ipv6 string) interface{} {
 	var constraints *Constraints
 	var _dtls, _dscp, _ipv6 bool
@@ -686,6 +685,29 @@ func checkIfRedirect(w http.ResponseWriter, r *http.Request) {
 }
 */
 
+func roomPage(w http.ResponseWriter, r *http.Request) {
+	// Renders index.html or full.html.
+	//checkIfRedirect(r)
+	tpl := "html/index_template.html"
+	room := rooms[maybeUseHttpsHostUrl(r)]
+	if room.id != "" {
+		log.Printf("Room %s has state %v", room.id, r)
+		if room.getOccupancy() >= 2 {
+			log.Printf("Room %s is full", room.id)
+			tpl = "html/full_template.html"
+		}
+		params, err := getRoomParameters(r, room.id, "", "")
+		if err != nil {
+			log.Printf("getRoomParameters: %v", err)
+		}
+		roomTemplate := template.Must(template.ParseFiles(tpl))
+		err = roomTemplate.Execute(w, params)
+		if err != nil {
+			log.Printf("roomTemplate: %v", err)
+		}
+	}
+}
+
 // The main UI page, renders the 'index_template.html' template.
 func mainPage(w http.ResponseWriter, r *http.Request) {
 	//checkIfRedirect(r)
@@ -746,7 +768,7 @@ func turn(w http.ResponseWriter, r *http.Request) {
 	}
 }
 */
-func iceConfigurationPage(w http.ResponseWriter, r *http.Request) {
+func iceConfigPage(w http.ResponseWriter, r *http.Request) {
 	cfgs := Config{}
 	if ICE_SERVER_OVERRIDE != nil {
 		cfgs.IceServers = ICE_SERVER_OVERRIDE
@@ -789,8 +811,8 @@ func main() {
 	//http.HandleFunc("/leave/", leavePage)
 	//http.HandleFunc("/message/", messagePage)
 	http.HandleFunc("/params", paramsPage)
-	http.HandleFunc("/v1alpha/iceconfig", iceConfigurationPage)
-	//http.HandleFunc("/r/", roomPage)
+	http.HandleFunc("/v1alpha/iceconfig", iceConfigPage)
+	http.HandleFunc("/r/", roomPage)
 	// collider need websocket support not available on appengine standard
 	/*
 		if os.Getenv("GAE_ENV") != "standard" {
