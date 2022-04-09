@@ -59,9 +59,9 @@ const (
 	   #   }
 	   # ]
 	*/
-	ICE_SERVER_OVERRIDE     = ""
 	ICE_SERVER_BASE_URL     = "https://goapprtc.appspot.com"
 	ICE_SERVER_URL_TEMPLATE = "%s/v1alpha/iceconfig?key=%s"
+	ICE_SERVER_URLS         = ""
 	/*
 	   ICE_SERVER_API_KEY = os.GetVar("ICE_SERVER_API_KEY")
 	   HEADER_MESSAGE = os.GetVar("HEADER_MESSAGE")
@@ -98,15 +98,16 @@ const (
 )
 
 var (
-	HEADER_MESSAGE     = os.Getenv("HEADER_MESSAGE")
-	ICE_SERVER_API_KEY = os.Getenv("ICE_SERVER_API_KEY")
+	HEADER_MESSAGE      = os.Getenv("HEADER_MESSAGE")
+	ICE_SERVER_API_KEY  = os.Getenv("ICE_SERVER_API_KEY")
+	ICE_SERVER_OVERRIDE = map[string]interface{}{"urls": []string{"turn:hostname/IpToTurnServer:19305?transport=udp", "turn:hostname/IpToTurnServer:19305?transport=tcp"}}
 )
 
 type Config struct {
-	IceServers    []string `json:"iceServers,omitempty"`
-	IceTransports []string `json:"iceTransports,omitempty"`
-	BundlePolicy  string   `json:"bundlePolicy,omitempty"`
-	RtcpMuxPolicy string   `json:"rtcpMuxPolicy,omitempty"`
+	IceServers    map[string]interface{} `json:"iceServers,omitempty"`
+	IceTransports []string               `json:"iceTransports,omitempty"`
+	BundlePolicy  string                 `json:"bundlePolicy,omitempty"`
+	RtcpMuxPolicy string                 `json:"rtcpMuxPolicy,omitempty"`
 }
 
 type Options struct {
@@ -195,8 +196,8 @@ func getPreferredAudioSendCodec(user_agent string) string {
 	return preferred_audio_send_codec
 }
 
-func makePcConfig(iceTransports, iceServerOverride string) interface{} {
-	return Config{IceServers: strings.Split(iceServerOverride, ","),
+func makePcConfig(iceTransports string, iceServerOverride map[string]interface{}) interface{} {
+	return Config{IceServers: iceServerOverride,
 		IceTransports: strings.Split(iceTransports, ","),
 		BundlePolicy:  "max-bundle",
 		RtcpMuxPolicy: "require"}
@@ -744,37 +745,26 @@ func turn(w http.ResponseWriter, r *http.Request) {
 		c.Errorf("Encode: %v", err)
 	}
 }
-
+*/
 func iceConfigurationPage(w http.ResponseWriter, r *http.Request) {
-	cfgs := make([]Config, 0)
-	if turn_server != "" {
-		cfgs = append(cfgs, Config{Url: "turn:" + turn_server, Credential: ts_pwd})
+	cfgs := Config{}
+	if ICE_SERVER_OVERRIDE != nil {
+		cfgs.IceServers = ICE_SERVER_OVERRIDE
+	} else {
+		cfgs.IceServers = map[string]interface{}{"urls": ICE_SERVER_URLS}
 	}
-	if stun_server != "" {
-		cfgs = append(cfgs, Config{Url: "stun:" + stun_server})
-	}
-	return &ICE{IceServers: cfgs}
-
-	var data ICE
-	err = json.Unmarshal(body, &data)
-	if err != nil {	var data ICE
-	err = json.Unmarshal(body, &data)
+	data, err := json.Marshal(cfgs)
 	if err != nil {
-		c.Errorf("Unmarshal: %v", err)
+		log.Printf("Unmarshal: %v", err)
 	}
 	w.Header().Set("Content-Type", "application/json")
-	//w.Header().Set("Access-Control-Allow-Origin", "https://goapprtc.appspot.com")
 	w.WriteHeader(http.StatusOK)
 	enc := json.NewEncoder(w)
 	if err := enc.Encode(data); err != nil {
-		c.Errorf("Encode: %v", err)
-	}
-	enc := json.NewEncoder(w)
-	if err := enc.Encode(data); err != nil {
-		c.Errorf("Encode: %v", err)
+		log.Printf("Encode: %v", err)
 	}
 }
-*/
+
 func paramsPage(w http.ResponseWriter, r *http.Request) {
 	//var data map[string]interface{}
 	params, err := getRoomParameters(r, "", "", "")
@@ -799,7 +789,7 @@ func main() {
 	//http.HandleFunc("/leave/", leavePage)
 	//http.HandleFunc("/message/", messagePage)
 	http.HandleFunc("/params", paramsPage)
-	//http.HandleFunc("/v1alpha/iceconfig", iceConfigurationPage)
+	http.HandleFunc("/v1alpha/iceconfig", iceConfigurationPage)
 	//http.HandleFunc("/r/", roomPage)
 	// collider need websocket support not available on appengine standard
 	/*
