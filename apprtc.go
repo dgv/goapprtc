@@ -135,17 +135,14 @@ type SDP struct {
 	Label     int    `json:"label,omitempty"`
 }
 
-// This database is to store the messages from the sender client when the
-// receiver client is not ready to receive the messages.
-// Use []byte instead of string for msg because
-// the session description can be more than 500 characters.
+/*
 type Message struct {
 	Client_Id string `datastore:"client_id"`
 	Msg       []byte `datastore:"msg"`
 }
+*/
 
 type Client struct {
-	id          string
 	isInitiator bool
 	messages    []string
 }
@@ -155,7 +152,7 @@ var rooms = map[string]Room{}
 // All the data we store for a room
 type Room struct {
 	id         string
-	clients    []Client
+	clients    map[string]Client
 	occupancy  int
 	isLoopback bool
 }
@@ -184,17 +181,6 @@ func sanitize(key string) string {
 func makeClientId(room, user string) string {
 	return room + "/" + user
 }
-
-/*
-func getDefaultStunServer(user_agent string) string {
-	var default_stun_server string
-	default_stun_server = "stun.l.google.com:19302"
-	if strings.Contains(user_agent, "Firefox") {
-		default_stun_server = "stun.services.mozilla.com"
-	}
-	return
-}
-*/
 
 func getPreferredAudioSendCodec(user_agent string) string {
 	var preferred_audio_send_codec = ""
@@ -254,76 +240,81 @@ func makeOfferConstraints() interface{} {
 	return constraints
 }
 
+func (c *Client) addMessage(msg string) {
+	c.messages = append(c.messages, msg)
+}
+
+func (c *Client) clearMessages() {
+	c.messages = []string{}
+}
+
+func (c *Client) setInitiator() {
+	c.isInitiator = true
+}
+
+func (r *Room) addClient(clientId string, client Client) {
+	r.clients[clientId] = client
+}
+
+func (r *Room) remove(clientId string) {
+	delete(r.clients, clientId)
+}
+
 func (r *Room) getOccupancy() int {
-	return r.occupancy
+	return len(r.clients)
 }
 
-/*
-func (r *Room) getOtherUser(user string) string {
-	if user == r.User1 {
-		return r.User2
-	} else if user == r.User2 {
-		return r.User1
-	} else {
-		return ""
-	}
-}
-
-func (r *Room) hasUser(user string) bool {
-	if (user == r.User1) || (user == r.User2) {
+func (r *Room) hasClient(clientId string) bool {
+	if _, ok := r.clients[clientId]; ok {
 		return true
-	} else {
-		return false
-	}
-}
-
-func (r *Room) addUser(user string) {
-	if r.User1 == "" {
-		r.User1 = user
-	} else if r.User2 == "" {
-		r.User2 = user
-	} else {
-		panic("room is full")
-	}
-}
-
-func (r *Room) removeUser(user string) {
-	if user == r.User2 {
-		r.User2 = ""
-		r.User2_Connected = false
-	}
-	if user == r.User1 {
-		if r.User2 != "" {
-			r.User1 = r.User2
-			r.User1_Connected = r.User2_Connected
-			r.User2 = ""
-			r.User2_Connected = false
-		} else {
-			r.User1 = ""
-			r.User1_Connected = false
-		}
-	}
-}
-
-func (r *Room) setConnected(user string) {
-	if user == r.User1 {
-		r.User1_Connected = true
-	}
-	if user == r.User2 {
-		r.User2_Connected = true
-	}
-}
-
-func (r *Room) isConnected(user string) bool {
-	if user == r.User1 {
-		return r.User1_Connected
-	}
-	if user == r.User2 {
-		return r.User2_Connected
 	}
 	return false
 }
-*/
+
+func (r *Room) getClient(clientId string) (c Client) {
+	c, _ = r.clients[clientId]
+	return
+}
+
+func (r *Room) getOtherClient(clientId string) Client {
+	for k, _ := range r.clients {
+		if k != clientId {
+			return r.clients[clientId]
+		}
+	}
+	return Client{}
+}
+
+func (r *Room) getKeyRoom(host, roomId string) string {
+	return fmt.Sprintf("%s/%s", host, roomId)
+}
+
+func addClientToRoom(hostUrl, roomId, clientId, isLoopback string) (error string, isInitiator bool, messages []string, roomState string) {
+	r, ok := rooms[roomId]
+	if !ok {
+		log.Println("room not found")
+	}
+	//key := r.getKeyRoom(hostUrl, roomId)
+	occupancy := r.getOccupancy()
+	if occupancy >= 2 {
+		error = RESPONSE_ROOM_FULL
+		return
+	}
+	if r.hasClient(clientId) {
+		error = RESPONSE_DUPLICATE_CLIENT
+		return
+	}
+	return
+}
+
+func removeClientFromRoom(host, roomId, clientId string) {
+
+}
+
+func saveMessageFromClient(host, roomId, clientId, message string) {
+
+}
+
 /*Distp.ResponseWriter, r *http.Request) {
 	b, _ := ioutil.ReadAll(r.Body)
 	re := regexp.MustCompile("[0-9]+/[0-9]+")
