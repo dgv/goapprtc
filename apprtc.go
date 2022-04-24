@@ -294,7 +294,7 @@ func addClientToRoom(hostUrl, roomId, clientId, isLoopback string) (error string
 	if !ok {
 		log.Println("room not found")
 	}
-	//key := r.getKeyRoom(hostUrl, roomId)
+
 	occupancy := r.getOccupancy()
 	if occupancy >= 2 {
 		error = RESPONSE_ROOM_FULL
@@ -304,15 +304,57 @@ func addClientToRoom(hostUrl, roomId, clientId, isLoopback string) (error string
 		error = RESPONSE_DUPLICATE_CLIENT
 		return
 	}
+
+	if r.hasClient(LOOPBACK_CLIENT_ID) {
+		r.remove(LOOPBACK_CLIENT_ID)
+	}
+	if r.getOccupancy() > 0 {
+		oc := r.getOtherClient(clientId)
+		oc.setInitiator()
+	}
+
+	log.Printf("Added client %s in room %s", clientId, roomId)
 	return
 }
 
-func removeClientFromRoom(host, roomId, clientId string) {
-
+func removeClientFromRoom(host, roomId, clientId string) (error, roomState string) {
+	r, ok := rooms[roomId]
+	if !ok {
+		log.Println("remove_client_from_room: Unknown room", roomId)
+		return RESPONSE_UNKNOWN_ROOM, ""
+	}
+	if !r.hasClient(clientId) {
+		log.Println("remove_client_from_room: Unknown client", clientId)
+		return RESPONSE_UNKNOWN_CLIENT, ""
+	}
+	r.remove(clientId)
+	if r.hasClient(LOOPBACK_CLIENT_ID) {
+		r.remove(LOOPBACK_CLIENT_ID)
+	}
+	if r.getOccupancy() > 0 {
+		oc := r.getOtherClient(clientId)
+		oc.setInitiator()
+	}
+	log.Printf("Removed client %s from room %s", clientId, roomId)
+	return
 }
 
-func saveMessageFromClient(host, roomId, clientId, message string) {
-
+func saveMessageFromClient(host, roomId, clientId, message string) (error string, saved bool) {
+	r, ok := rooms[roomId]
+	if !ok {
+		error = RESPONSE_UNKNOWN_ROOM
+		saved = false
+		return
+	}
+	c, ok := r.clients[clientId]
+	if !ok {
+		error = RESPONSE_UNKNOWN_CLIENT
+		saved = false
+		return
+	}
+	c.addMessage(message)
+	log.Printf("Saved message for client %s in room %s", clientId, roomId)
+	return
 }
 
 /*Distp.ResponseWriter, r *http.Request) {
