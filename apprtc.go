@@ -13,11 +13,13 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"html/template"
 	"log"
 	"math/rand"
 	"net/http"
 	"os"
+	"io/ioutil"
 	"regexp"
 	"strconv"
 	"strings"
@@ -432,69 +434,55 @@ func connectPage(w http.ResponseWriter, r *http.Request) {
 		c.Warningf("Unexpected Connect Message to room %s", room_key)
 	}
 }
+*/
+
+func sendMessageToCollider(r *http.Request, roomId, clientId, message string) {
+    log.Printf("Forwarding message to collider for room %s client %s", roomId, clientId)
+    _, wssPostUrl := getWssParameters(r)
+    u := wssPostUrl + "/" + roomId + "/" + clientId
+    resp, err := http.PostForm(u, url.Values{"room_id": {roomId}, "client_id": {clientId}, "message": {message}})
+    if err != nil {
+      log.Printf("Failed to PostForm: %v", err)
+    }
+    if resp.StatusCode != 200 {
+      log.Printf("Failed to send message to collider: %d", resp.StatusCode)
+    }
+}
+
+type result struct {
+  Result string  `json:"result"`
+}
 
 func messagePage(w http.ResponseWriter, r *http.Request) {
-	//c := appengine.NewContext(r)
-	room_key := r.URL.Query().Get("r")
-	user := r.URL.Query().Get("u")
-	m, _ := ioutil.ReadAll(r.Body)
-	msg := string(m)
-	room := new(Room)
-	client_id := make_client_id(room_key, user)
-	datastore.Get(c, datastore.NewKey(c, "Room", room_key, 0, nil), room)
-	if room != nil {
-		var message SDP
-		json.Unmarshal(m, &message)
-		other_user := room.get_other_user(user)
-		if message.Type == "bye" {
-			// This would remove the other_user in loopback test too.
-			// So check its availability before forwarding Bye message.
-			room.remove_user(user)
-			q := datastore.NewQuery("Message").Filter("client_id =", client_id)
-			var messages []Message
-			k, err := q.GetAll(c, &messages)
-			if err != nil {
-				c.Errorf("datastore: %v", err)
-			}
-			for i, _ := range messages {
-				datastore.Delete(c, datastore.NewKey(c, k[i].Kind(), k[i].StringID(), k[i].IntID(), nil))
-				c.Infof("Deleted the saved message for " + client_id)
-			}
-			if room.get_occupancy() > 0 {
-				datastore.Put(c, datastore.NewKey(c, "Room", room_key, 0, nil), room)
-			} else {
-				datastore.Delete(c, datastore.NewKey(c, "Room", room_key, 0, nil))
-			}
-			c.Infof("User %s quit from room %s", user, room_key)
-			c.Infof("Room %s has state %v", room_key, room)
-		}
-		if other_user != "" && room.has_user(other_user) {
-			if message.Type == "offer" {
-				// Special case the loopback scenario.
-				if other_user == user {
-					msg = make_loopback_answer(msg)
-				}
-			}
-			if room.is_connected(other_user) {
-				channel.Send(c, make_client_id(room_key, other_user), msg)
-				c.Infof("Delivered message to user %s", other_user)
-			} else {
-				_msg := Message{
-					Client_Id: make_client_id(room_key, other_user),
-					Msg:       []byte(msg),
-				}
-				_, err := datastore.Put(c, datastore.NewIncompleteKey(c, "Message", nil), &_msg)
-				if err != nil {
-					c.Errorf("datastore: %v", err)
-				}
-				c.Infof("Saved message for user %s", other_user)
-			}
-		}
-	} else {
-		c.Warningf("Unknown room %s", room_key)
+  q := r.URL.Query()
+  roomId := q.Get("room_id")
+  clientId:= q.Get("client_id")
+  defer r.Body.Close()
+  messageJson, _ := ioutil.ReadAll(r.Body)
+
+  error, saved := saveMessageFromClient(r.RequestURI, roomId, clientId, string(messageJson))
+  if error != "" {
+    return
+  }
+  rlt := result{Result: ""}
+  if !saved {
+    sendMessageToCollider(r, roomId, clientId, string(messageJson))
+  } else {
+    rlt.Result = RESPONSE_SUCCESS
+	}
+
+	data, err := json.Marshal(rlt)
+	if err != nil {
+		log.Printf("Marshal: %v", err)
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	enc := json.NewEncoder(w)
+	if err := enc.Encode(data); err != nil {
+		log.Printf("Encode: %v", err)
 	}
 }
-*/
+
 func makePcConstraints(dtls, dscp, ipv6 string) interface{} {
 	var constraints *Constraints
 	var _dtls, _dscp, _ipv6 bool
@@ -842,7 +830,7 @@ func main() {
 	http.HandleFunc("/", mainPage)
 	//http.HandleFunc("/join/", joinPage)
 	//http.HandleFunc("/leave/", leavePage)
-	//http.HandleFunc("/message/", messagePage)
+	http.HandleFunc("/message/", messagePage)
 	http.HandleFunc("/params", paramsPage)
 	http.HandleFunc("/v1alpha/iceconfig", iceConfigPage)
 	http.HandleFunc("/r/", roomPage)
