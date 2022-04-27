@@ -359,83 +359,6 @@ func saveMessageFromClient(host, roomId, clientId, message string) (error string
 	return
 }
 
-/*Distp.ResponseWriter, r *http.Request) {
-	b, _ := ioutil.ReadAll(r.Body)
-	re := regexp.MustCompile("[0-9]+/[0-9]+")
-	k := strings.Split(re.FindString(string(b)), "/")
-	room_key := k[0]
-	user := k[1]
-	client_id := makeClientId(room_key, user)
-	room := new(Room)
-	err := datastore.Get(c, datastore.NewKey(c, "Room", room_key, 0, nil), room)
-	if err != nil {
-		c.Errorf("datastore: %v", err)
-	}
-	if room != nil && room.has_user(user) {
-		other_user := room.get_other_user(user)
-		room.remove_user(user)
-		q := datastore.NewQuery("Message").Filter("client_id =", client_id)
-		var messages []Message
-		k, err := q.GetAll(c, &messages)
-		if err != nil {
-			c.Errorf("datastore: %v", err)
-		}
-		for i, _ := range messages {
-			datastore.Delete(c, datastore.NewKey(c, k[i].Kind(), k[i].StringID(), k[i].IntID(), nil))
-			c.Infof("Deleted the saved message for " + client_id)
-		}
-		if room.get_occupancy() > 0 {
-			datastore.Put(c, datastore.NewKey(c, "Room", room_key, 0, nil), room)
-		} else {
-			datastore.Delete(c, datastore.NewKey(c, "Room", room_key, 0, nil))
-		}
-		c.Infof("User %s removed from room %s", user, room_key)
-		c.Infof("Room %s has state %v", room_key, room)
-		if other_user != "" && other_user != user {
-			channel.Send(c, room_key+"/"+other_user, `{"type": "bye"}`)
-			c.Infof("Sent BYE to %s", other_user)
-		}
-		c.Warningf("User %s disconnected from room %s", user, room_key)
-	}
-}
-
-func connectPage(w http.ResponseWriter, r *http.Request) {
-	c := appengine.NewContext(r)
-	b, _ := ioutil.ReadAll(r.Body)
-	re := regexp.MustCompile("[0-9]+/[0-9]+")
-	k := strings.Split(re.FindString(string(b)), "/")
-	room_key := k[0]
-	user := k[1]
-	client_id := make_client_id(room_key, user)
-	room := new(Room)
-	err := datastore.Get(c, datastore.NewKey(c, "Room", room_key, 0, nil), room)
-	if err != nil {
-		c.Errorf("datastore: %v", err)
-	}
-	// Check if room has user in case that disconnect message comes before
-	// connect message with unknown reason, observed with local AppEngine SDK.
-	if room != nil && room.has_user(user) {
-		room.set_connected(user)
-		datastore.Put(c, datastore.NewKey(c, "Room", room_key, 0, nil), room)
-		q := datastore.NewQuery("Message").Filter("client_id =", client_id)
-		var messages []Message
-		k, err := q.GetAll(c, &messages)
-		if err != nil {
-			c.Errorf("datastore: %v", err)
-		}
-		for i, msg := range messages {
-			channel.Send(c, client_id, string(msg.Msg))
-			c.Infof("Delivered saved message to " + client_id)
-			datastore.Delete(c, datastore.NewKey(c, k[i].Kind(), k[i].StringID(), k[i].IntID(), nil))
-		}
-		c.Infof("User %s connected to room %s", user, room_key)
-		c.Infof("Room %s has state %v", room_key, room)
-	} else {
-		c.Warningf("Unexpected Connect Message to room %s", room_key)
-	}
-}
-*/
-
 func sendMessageToCollider(r *http.Request, roomId, clientId, message string) {
     log.Printf("Forwarding message to collider for room %s client %s", roomId, clientId)
     _, wssPostUrl := getWssParameters(r)
@@ -743,52 +666,6 @@ func mainPage(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-/*
- *  CORS WORKAROUND: computeengineondemand access-control-allow-origin: https://apprtc.appspot.com
- */
-/*
-type Turn struct {
-	Username string   `json:"username"`
-	Password string   `json:"password"`
-	Uris     []string `json:"uris"`
-}
-
-func turn(w http.ResponseWriter, r *http.Request) {
-	username := r.URL.Query().Get("username")
-	key := r.URL.Query().Get("key")
-	c := appengine.NewContext(r)
-	fetcher := urlfetch.Client(c)
-	u, _ := url.Parse("https://computeengineondemand.appspot.com/turn")
-	q := u.Query()
-	if username != "" {
-		q.Set("username", username)
-	}
-	if key != "" {
-		q.Set("key", key)
-	}
-	u.RawQuery = q.Encode()
-	res, err := fetcher.Get(u.String())
-	if err != nil {
-		c.Errorf("Fetch: %v", err)
-	}
-	body, err := ioutil.ReadAll(res.Body)
-	if err != nil {
-		c.Errorf("ReadAll: %v", err)
-	}
-	var data Turn
-	err = json.Unmarshal(body, &data)
-	if err != nil {
-		c.Errorf("Unmarshal: %v", err)
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Access-Control-Allow-Origin", "https://goapprtc.appspot.com")
-	w.WriteHeader(http.StatusOK)
-	enc := json.NewEncoder(w)
-	if err := enc.Encode(data); err != nil {
-		c.Errorf("Encode: %v", err)
-	}
-}
-*/
 func iceConfigPage(w http.ResponseWriter, r *http.Request) {
 	cfgs := Config{}
 	if ICE_SERVER_OVERRIDE != nil {
