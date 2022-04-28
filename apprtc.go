@@ -13,13 +13,13 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"net/url"
 	"html/template"
+	"io/ioutil"
 	"log"
 	"math/rand"
 	"net/http"
+	"net/url"
 	"os"
-	"io/ioutil"
 	"regexp"
 	"strconv"
 	"strings"
@@ -291,7 +291,7 @@ func (r *Room) getKeyRoom(host, roomId string) string {
 	return fmt.Sprintf("%s/%s", host, roomId)
 }
 
-func addClientToRoom(hostUrl, roomId, clientId, isLoopback string) (error string, isInitiator bool, messages []string, roomState string) {
+func addClientToRoom(hostUrl, roomId, clientId string, isLoopback bool) (error, isInitiator string, messages []string, roomState string) {
 	r, ok := rooms[roomId]
 	if !ok {
 		log.Println("room not found")
@@ -313,6 +313,7 @@ func addClientToRoom(hostUrl, roomId, clientId, isLoopback string) (error string
 	if r.getOccupancy() > 0 {
 		oc := r.getOtherClient(clientId)
 		oc.setInitiator()
+		isInitiator = "true"
 	}
 
 	log.Printf("Added client %s in room %s", clientId, roomId)
@@ -360,38 +361,39 @@ func saveMessageFromClient(host, roomId, clientId, message string) (error string
 }
 
 func sendMessageToCollider(r *http.Request, roomId, clientId, message string) {
-    log.Printf("Forwarding message to collider for room %s client %s", roomId, clientId)
-    _, wssPostUrl := getWssParameters(r)
-    u := wssPostUrl + "/" + roomId + "/" + clientId
-    resp, err := http.PostForm(u, url.Values{"room_id": {roomId}, "client_id": {clientId}, "message": {message}})
-    if err != nil {
-      log.Printf("Failed to PostForm: %v", err)
-    }
-    if resp.StatusCode != 200 {
-      log.Printf("Failed to send message to collider: %d", resp.StatusCode)
-    }
+	log.Printf("Forwarding message to collider for room %s client %s", roomId, clientId)
+	_, wssPostUrl := getWssParameters(r)
+	u := wssPostUrl + "/" + roomId + "/" + clientId
+	resp, err := http.PostForm(u, url.Values{"room_id": {roomId}, "client_id": {clientId}, "message": {message}})
+	if err != nil {
+		log.Printf("Failed to PostForm: %v", err)
+	}
+	if resp.StatusCode != 200 {
+		log.Printf("Failed to send message to collider: %d", resp.StatusCode)
+	}
 }
 
 type result struct {
-  Result string  `json:"result"`
+	Result string                 `json:"result"`
+	Params map[string]interface{} `json:"params"`
 }
 
 func messagePage(w http.ResponseWriter, r *http.Request) {
-  q := r.URL.Query()
-  roomId := q.Get("room_id")
-  clientId:= q.Get("client_id")
-  defer r.Body.Close()
-  messageJson, _ := ioutil.ReadAll(r.Body)
+	q := r.URL.Query()
+	roomId := q.Get("room_id")
+	clientId := q.Get("client_id")
+	defer r.Body.Close()
+	messageJson, _ := ioutil.ReadAll(r.Body)
 
-  error, saved := saveMessageFromClient(r.RequestURI, roomId, clientId, string(messageJson))
-  if error != "" {
-    return
-  }
-  rlt := result{Result: ""}
-  if !saved {
-    sendMessageToCollider(r, roomId, clientId, string(messageJson))
-  } else {
-    rlt.Result = RESPONSE_SUCCESS
+	error, saved := saveMessageFromClient(r.RequestURI, roomId, clientId, string(messageJson))
+	if error != "" {
+		return
+	}
+	rlt := result{Result: ""}
+	if !saved {
+		sendMessageToCollider(r, roomId, clientId, string(messageJson))
+	} else {
+		rlt.Result = RESPONSE_SUCCESS
 	}
 
 	data, err := json.Marshal(rlt)
@@ -652,6 +654,60 @@ func roomPage(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func joinPage(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	roomId := q.Get("room_id")
+	clientId := q.Get("client_id")
+	//isInitiator := q.Get("is_initiator")
+	isLoopback := q.Get("debug") == "loopback"
+	error, isInitiator, messages, roomState := addClientToRoom(r.RequestURI, roomId, clientId, isLoopback)
+	if error != "" {
+		log.Printf("Error adding client to room: %s room_state %s", error, roomState)
+		return
+	}
+	params, err := getRoomParameters(r, roomId, clientId, isInitiator)
+	if err != nil {
+		log.Printf("Error adding client to room: %v", err)
+		return
+	}
+	log.Printf("User %s joined room %s", clientId, roomId)
+	log.Printf("Room %s has state %s", roomId, roomState)
+
+	params["messages"] = messages
+	data, err := json.Marshal(result{Result: roomState, Params: params})
+	if err != nil {
+		log.Printf("Marshal: %v", err)
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	enc := json.NewEncoder(w)
+	if err := enc.Encode(data); err != nil {
+		log.Printf("Encode: %v", err)
+	}
+}
+
+func leavePage(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	roomId := q.Get("room_id")
+	clientId := q.Get("client_id")
+	error, roomState := removeClientFromRoom(r.RequestURI, roomId, clientId)
+	if error == "" {
+		log.Printf("Room %s has state %s", roomId, roomState)
+	}
+	/*
+		data, err := json.Marshal()
+		if err != nil {
+			log.Printf("Unmarshal: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		enc := json.NewEncoder(w)
+		if err := enc.Encode(data); err != nil {
+			log.Printf("Encode: %v", err)
+		}
+	*/
+}
+
 // The main UI page, renders the 'index_template.html' template.
 func mainPage(w http.ResponseWriter, r *http.Request) {
 	//checkIfRedirect(r)
@@ -663,6 +719,24 @@ func mainPage(w http.ResponseWriter, r *http.Request) {
 	err = mainTemplate.Execute(w, params)
 	if err != nil {
 		log.Printf("mainTemplate: %v", err)
+	}
+}
+
+func paramsPage(w http.ResponseWriter, r *http.Request) {
+	//var data map[string]interface{}
+	params, err := getRoomParameters(r, "", "", "")
+	if err != nil {
+		log.Printf("getRoomParameters: %v", err)
+	}
+	data, err := json.Marshal(params)
+	if err != nil {
+		log.Printf("Unmarshal: %v", err)
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	enc := json.NewEncoder(w)
+	if err := enc.Encode(data); err != nil {
+		log.Printf("Encode: %v", err)
 	}
 }
 
@@ -685,28 +759,10 @@ func iceConfigPage(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func paramsPage(w http.ResponseWriter, r *http.Request) {
-	//var data map[string]interface{}
-	params, err := getRoomParameters(r, "", "", "")
-	if err != nil {
-		log.Printf("getRoomParameters: %v", err)
-	}
-	data, err := json.Marshal(params)
-	if err != nil {
-		log.Printf("Unmarshal: %v", err)
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	enc := json.NewEncoder(w)
-	if err := enc.Encode(data); err != nil {
-		log.Printf("Encode: %v", err)
-	}
-}
-
 func main() {
 	http.HandleFunc("/", mainPage)
-	//http.HandleFunc("/join/", joinPage)
-	//http.HandleFunc("/leave/", leavePage)
+	http.HandleFunc("/join/", joinPage)
+	http.HandleFunc("/leave/", leavePage)
 	http.HandleFunc("/message/", messagePage)
 	http.HandleFunc("/params", paramsPage)
 	http.HandleFunc("/v1alpha/iceconfig", iceConfigPage)
