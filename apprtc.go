@@ -28,11 +28,7 @@ import (
 
 const (
 	// Deprecated domains which we should to redirect to REDIRECT_URL.
-	/*
-	   REDIRECT_DOMAINS =  [
-	     'goapprtc.appspot.com'
-	   ]
-	*/
+	REDIRECT_DOMAINS = "goapprtc.appspot.com"
 	// URL which we should redirect to if matching in REDIRECT_DOMAINS.
 	REDIRECT_URL = "https://goapprtc.appspot.com"
 
@@ -610,26 +606,13 @@ func getRoomParameters(r *http.Request, roomId, clientId, isInitiator string) (p
 	return
 }
 
-/*
 func checkIfRedirect(w http.ResponseWriter, r *http.Request) {
-	var parsedArgs string
-	if strings.Contains(r.Header.Get("Host"),REDIRECT_DOMAINS) {
-		q := r.URL.Query()
-		for a := range url.Values {
-			p = "=" + q.Get(a)
-			if parsedArgs == "" {
-				parsedArgs += "?"
-			} else {
-				parsedArgs += "&"
-			}
-			parsedArgs += a + p
-		}
-		redirectUrl:= REDIRECT_URL + r.Path + parsedAparsedArgs
-		http.Redirect(w, r, redirectUrl , 301)
+	if strings.Contains(r.Header.Get("Host"), REDIRECT_DOMAINS) {
+		redirectUrl := REDIRECT_URL + "?" + r.URL.Path + r.URL.RawQuery
+		http.Redirect(w, r, redirectUrl, 301)
 	}
 	return
 }
-*/
 
 func roomPage(w http.ResponseWriter, r *http.Request) {
 	// Renders index.html or full.html.
