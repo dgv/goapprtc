@@ -133,6 +133,28 @@ type SDP struct {
 	Label     int    `json:"label,omitempty"`
 }
 
+type Params struct {
+	WssPostURL             string        `json:"wss_post_url"`
+	_MediaConstraints       interface{}        `json:"media_constraints"`
+	IsLoopback             bool        `json:"is_loopback"`
+	HeaderMessage          string        `json:"header_message"`
+	IceServerURL           string        `json:"ice_server_url"`
+	ErrorMessages          []string `json:"error_messages"`
+	IceServerTransports    string        `json:"ice_server_transports"`
+	PcConfig               interface{}        `json:"pc_config"`
+	WarningMessages        []string `json:"warning_messages"`
+	PcConstraints          interface{}         `json:"pc_constraints"`
+	WssURL                 string        `json:"wss_url"`
+	OfferOptions           string        `json:"offer_options"`
+	VersionInfo            string        `json:"version_info"`
+	BypassJoinConfirmation bool        `json:"bypass_join_confirmation"`
+	IncludeLoopbackJs      string        `json:"include_loopback_js"`
+	RoomID					string		`json:"room_id"`
+	ClientID					string		`json:"client_id"`
+	RoomLink				string		`json:"room_link"`
+	IsInitiator				bool		`json:"isInitiator"`
+	Messages				[]string 	`json:"messages,omitempty"`
+}
 /*
 type Message struct {
 	Client_Id string `datastore:"client_id"`
@@ -287,7 +309,7 @@ func (r *Room) getKeyRoom(host, roomId string) string {
 	return fmt.Sprintf("%s/%s", host, roomId)
 }
 
-func addClientToRoom(hostUrl, roomId, clientId string, isLoopback bool) (error, isInitiator string, messages []string, roomState string) {
+func addClientToRoom(hostUrl, roomId, clientId string, isLoopback bool) (error string, isInitiator bool, messages []string, roomState string) {
 	r, ok := rooms[roomId]
 	if !ok {
 		log.Println("room not found")
@@ -309,7 +331,7 @@ func addClientToRoom(hostUrl, roomId, clientId string, isLoopback bool) (error, 
 	if r.getOccupancy() > 0 {
 		oc := r.getOtherClient(clientId)
 		oc.setInitiator()
-		isInitiator = "true"
+		isInitiator = true
 	}
 
 	log.Printf("Added client %s in room %s", clientId, roomId)
@@ -371,7 +393,7 @@ func sendMessageToCollider(r *http.Request, roomId, clientId, message string) {
 
 type result struct {
 	Result string                 `json:"result"`
-	Params map[string]interface{} `json:"params"`
+	Params_ Params `json:"params"`
 }
 
 func messagePage(w http.ResponseWriter, r *http.Request) {
@@ -456,7 +478,7 @@ func getWssParameters(r *http.Request) (wssUrl, wssPostUrl string) {
 
 // Returns appropriate room parameters based on query parameters in the request.
 // TODO(tkchin): move query parameter parsing to JS code.
-func getRoomParameters(r *http.Request, roomId, clientId, isInitiator string) (params map[string]interface{}, err error) {
+func getRoomParameters(r *http.Request, roomId, clientId string, isInitiator bool) (params Params, err error) {
 	q := r.URL.Query()
 	// Append strings to this list to have them thrown up in message boxes. This
 	// will also cause the app to fail.
@@ -573,36 +595,35 @@ func getRoomParameters(r *http.Request, roomId, clientId, isInitiator string) (p
 
 	bypassJoinConfirmation := os.Getenv("BYPASS_JOIN_CONFIRMATION") == "True"
 
-	params = map[string]interface{}{
-		"header_message":           HEADER_MESSAGE,
-		"error_messages":           errorMessages,
-		"warning_messages":         warningMessages,
-		"is_loopback":              debug == "loopback",
-		"pc_config":                pcConfig,
-		"pc_constraints":           pcConstraints,
-		"offer_options":            "{}",
-		"media_constraints":        mediaConstraints,
-		"ice_server_url":           iceServerUrl,
-		"ice_server_transports":    iceServerTransports,
-		"include_loopback_js":      includeLoopbackJs,
-		"wss_url":                  wssUrl,
-		"wss_post_url":             wssPostUrl,
-		"bypass_join_confirmation": bypassJoinConfirmation,
-		"version_info":             os.Getenv("VERSION_INFO"),
+	params = Params{
+		HeaderMessage:           HEADER_MESSAGE,
+		ErrorMessages:           errorMessages,
+		WarningMessages:         warningMessages,
+		IsLoopback:              debug == "loopback",
+		PcConfig:                pcConfig,
+		PcConstraints:           pcConstraints,
+		OfferOptions:            "{}",
+		_MediaConstraints:        mediaConstraints,
+		IceServerURL:           iceServerUrl,
+		IceServerTransports:    iceServerTransports,
+		IncludeLoopbackJs:      includeLoopbackJs,
+		WssURL:                  wssUrl,
+		WssPostURL:             wssPostUrl,
+		BypassJoinConfirmation: bypassJoinConfirmation,
+		VersionInfo:             os.Getenv("VERSION_INFO"),
 	}
 
 	if roomId != "" {
 		roomLink := maybeUseHttpsHostUrl(r) + "/r/" + roomId
 		//roomLink = appendUrlArguments(r, roomLink)
-		params["room_id"] = roomId
-		params["room_link"] = roomLink
+		params.RoomID= roomId
+		params.RoomLink = roomLink
 	}
 	if clientId != "" {
-		params["client_id"] = clientId
+		params.ClientID = clientId
 	}
-	if isInitiator != "" {
-		params["is_initiator"] = isInitiator
-	}
+	params.IsInitiator = isInitiator
+	
 	return
 }
 
@@ -625,7 +646,7 @@ func roomPage(w http.ResponseWriter, r *http.Request) {
 			log.Printf("Room %s is full", room.id)
 			tpl = "html/full_template.html"
 		}
-		params, err := getRoomParameters(r, room.id, "", "")
+		params, err := getRoomParameters(r, room.id, "", false)
 		if err != nil {
 			log.Printf("getRoomParameters: %v", err)
 		}
@@ -656,8 +677,8 @@ func joinPage(w http.ResponseWriter, r *http.Request) {
 	log.Printf("User %s joined room %s", clientId, roomId)
 	log.Printf("Room %s has state %s", roomId, roomState)
 
-	params["messages"] = messages
-	data, err := json.Marshal(result{Result: roomState, Params: params})
+	params.Messages = messages
+	data, err := json.Marshal(result{Result: roomState, Params_: params})
 	if err != nil {
 		log.Printf("Marshal: %v", err)
 	}
@@ -694,7 +715,7 @@ func leavePage(w http.ResponseWriter, r *http.Request) {
 // The main UI page, renders the 'index_template.html' template.
 func mainPage(w http.ResponseWriter, r *http.Request) {
 	//checkIfRedirect(r)
-	params, err := getRoomParameters(r, "", "", "")
+	params, err := getRoomParameters(r, "", "", false)
 	if err != nil {
 		log.Printf("getRoomParameters: %v", err)
 	}
@@ -707,10 +728,11 @@ func mainPage(w http.ResponseWriter, r *http.Request) {
 
 func paramsPage(w http.ResponseWriter, r *http.Request) {
 	//var data map[string]interface{}
-	params, err := getRoomParameters(r, "", "", "")
+	params, err := getRoomParameters(r, "", "", false)
 	if err != nil {
 		log.Printf("getRoomParameters: %v", err)
 	}
+	log.Printf("getRoomParameters: %v", params)
 	data, err := json.Marshal(params)
 	if err != nil {
 		log.Printf("Unmarshal: %v", err)
