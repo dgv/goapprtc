@@ -678,16 +678,13 @@ func joinPage(w http.ResponseWriter, r *http.Request) {
 	log.Printf("Room %s has state %s", roomId, roomState)
 
 	params.Messages = messages
-	data, err := json.Marshal(result{Result: roomState, Params_: params})
+	_, err = json.Marshal(result{Result: roomState, Params_: params})
 	if err != nil {
 		log.Printf("Marshal: %v", err)
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	enc := json.NewEncoder(w)
-	if err := enc.Encode(data); err != nil {
-		log.Printf("Encode: %v", err)
-	}
+	json.NewEncoder(w).Encode(params)
 }
 
 func leavePage(w http.ResponseWriter, r *http.Request) {
@@ -732,17 +729,13 @@ func paramsPage(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Printf("getRoomParameters: %v", err)
 	}
-	log.Printf("getRoomParameters: %v", params)
-	data, err := json.Marshal(params)
+	_, err = json.Marshal(params)
 	if err != nil {
 		log.Printf("Unmarshal: %v", err)
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	enc := json.NewEncoder(w)
-	if err := enc.Encode(data); err != nil {
-		log.Printf("Encode: %v", err)
-	}
+	json.NewEncoder(w).Encode(params)
 }
 
 func iceConfigPage(w http.ResponseWriter, r *http.Request) {
@@ -752,16 +745,13 @@ func iceConfigPage(w http.ResponseWriter, r *http.Request) {
 	} else {
 		cfgs.IceServers = map[string]interface{}{"urls": ICE_SERVER_URLS}
 	}
-	data, err := json.Marshal(cfgs)
+	_, err := json.Marshal(cfgs)
 	if err != nil {
 		log.Printf("Unmarshal: %v", err)
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	enc := json.NewEncoder(w)
-	if err := enc.Encode(data); err != nil {
-		log.Printf("Encode: %v", err)
-	}
+	json.NewEncoder(w).Encode(cfgs)
 }
 
 func main() {
