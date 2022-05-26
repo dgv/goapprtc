@@ -134,27 +134,28 @@ type SDP struct {
 }
 
 type Params struct {
-	WssPostURL             string        `json:"wss_post_url"`
-	_MediaConstraints       interface{}        `json:"media_constraints"`
+	WssPostURL             string      `json:"wss_post_url"`
+	_MediaConstraints      interface{} `json:"media_constraints"`
 	IsLoopback             bool        `json:"is_loopback"`
-	HeaderMessage          string        `json:"header_message"`
-	IceServerURL           string        `json:"ice_server_url"`
-	ErrorMessages          []string `json:"error_messages"`
-	IceServerTransports    string        `json:"ice_server_transports"`
-	PcConfig               interface{}        `json:"pc_config"`
-	WarningMessages        []string `json:"warning_messages"`
-	PcConstraints          interface{}         `json:"pc_constraints"`
-	WssURL                 string        `json:"wss_url"`
-	OfferOptions           string        `json:"offer_options"`
-	VersionInfo            string        `json:"version_info"`
+	HeaderMessage          string      `json:"header_message"`
+	IceServerURL           string      `json:"ice_server_url"`
+	ErrorMessages          []string    `json:"error_messages"`
+	IceServerTransports    string      `json:"ice_server_transports"`
+	PcConfig               interface{} `json:"pc_config"`
+	WarningMessages        []string    `json:"warning_messages"`
+	PcConstraints          interface{} `json:"pc_constraints"`
+	WssURL                 string      `json:"wss_url"`
+	OfferOptions           string      `json:"offer_options"`
+	VersionInfo            string      `json:"version_info"`
 	BypassJoinConfirmation bool        `json:"bypass_join_confirmation"`
-	IncludeLoopbackJs      string        `json:"include_loopback_js"`
-	RoomID					string		`json:"room_id"`
-	ClientID					string		`json:"client_id"`
-	RoomLink				string		`json:"room_link"`
-	IsInitiator				bool		`json:"isInitiator"`
-	Messages				[]string 	`json:"messages,omitempty"`
+	IncludeLoopbackJs      string      `json:"include_loopback_js"`
+	RoomID                 string      `json:"room_id"`
+	ClientID               string      `json:"client_id"`
+	RoomLink               string      `json:"room_link"`
+	IsInitiator            bool        `json:"isInitiator"`
+	Messages               []string    `json:"messages,omitempty"`
 }
+
 /*
 type Message struct {
 	Client_Id string `datastore:"client_id"`
@@ -392,7 +393,7 @@ func sendMessageToCollider(r *http.Request, roomId, clientId, message string) {
 }
 
 type result struct {
-	Result string                 `json:"result"`
+	Result  string `json:"result"`
 	Params_ Params `json:"params"`
 }
 
@@ -596,34 +597,34 @@ func getRoomParameters(r *http.Request, roomId, clientId string, isInitiator boo
 	bypassJoinConfirmation := os.Getenv("BYPASS_JOIN_CONFIRMATION") == "True"
 
 	params = Params{
-		HeaderMessage:           HEADER_MESSAGE,
-		ErrorMessages:           errorMessages,
-		WarningMessages:         warningMessages,
-		IsLoopback:              debug == "loopback",
-		PcConfig:                pcConfig,
-		PcConstraints:           pcConstraints,
-		OfferOptions:            "{}",
-		_MediaConstraints:        mediaConstraints,
+		HeaderMessage:          HEADER_MESSAGE,
+		ErrorMessages:          errorMessages,
+		WarningMessages:        warningMessages,
+		IsLoopback:             debug == "loopback",
+		PcConfig:               pcConfig,
+		PcConstraints:          pcConstraints,
+		OfferOptions:           "{}",
+		_MediaConstraints:      mediaConstraints,
 		IceServerURL:           iceServerUrl,
 		IceServerTransports:    iceServerTransports,
 		IncludeLoopbackJs:      includeLoopbackJs,
-		WssURL:                  wssUrl,
+		WssURL:                 wssUrl,
 		WssPostURL:             wssPostUrl,
 		BypassJoinConfirmation: bypassJoinConfirmation,
-		VersionInfo:             os.Getenv("VERSION_INFO"),
+		VersionInfo:            os.Getenv("VERSION_INFO"),
 	}
 
 	if roomId != "" {
 		roomLink := maybeUseHttpsHostUrl(r) + "/r/" + roomId
 		//roomLink = appendUrlArguments(r, roomLink)
-		params.RoomID= roomId
+		params.RoomID = roomId
 		params.RoomLink = roomLink
 	}
 	if clientId != "" {
 		params.ClientID = clientId
 	}
 	params.IsInitiator = isInitiator
-	
+
 	return
 }
 
