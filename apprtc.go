@@ -78,8 +78,8 @@ const (
 	   WSS_HOST_PORT_PAIRS = [ins[WSS_INSTANCE_HOST_KEY] for ins in WSS_INSTANCES]
 	*/
 	// memcache key for the active collider host.iceServers
-	WSS_HOST_PORT_PAIRS      = ""
-	WSS_HOST_ACTIVE_HOST_KEY = ""
+	WSS_HOST_PORT_PAIRS      = "goapprtc.dgv.dev.br:443"
+	WSS_HOST_ACTIVE_HOST_KEY = "wss_host_active_host"
 
 	// Dictionary keys in the collider probing result.
 	WSS_HOST_IS_UP_KEY         = "is_up"
@@ -98,14 +98,14 @@ const (
 var (
 	HEADER_MESSAGE      = os.Getenv("HEADER_MESSAGE")
 	ICE_SERVER_API_KEY  = os.Getenv("ICE_SERVER_API_KEY")
-	ICE_SERVER_OVERRIDE = map[string]interface{}{"urls": []string{"turn:hostname/IpToTurnServer:19305?transport=udp", "turn:hostname/IpToTurnServer:19305?transport=tcp"}}
+	ICE_SERVER_OVERRIDE = []string{""}
 )
 
 type Config struct {
-	IceServers    map[string]interface{} `json:"iceServers,omitempty"`
-	IceTransports []string               `json:"iceTransports,omitempty"`
-	BundlePolicy  string                 `json:"bundlePolicy,omitempty"`
-	RtcpMuxPolicy string                 `json:"rtcpMuxPolicy,omitempty"`
+	IceServers    interface{} `json:"iceServers,omitempty"`
+	IceTransports []string    `json:"iceTransports,omitempty"`
+	BundlePolicy  string      `json:"bundlePolicy,omitempty"`
+	RtcpMuxPolicy string      `json:"rtcpMuxPolicy,omitempty"`
 }
 
 type Options struct {
@@ -134,25 +134,25 @@ type SDP struct {
 }
 
 type Params struct {
-	WssPostURL             string      `json:"wss_post_url"`
-	_MediaConstraints      interface{} `json:"media_constraints"`
+	WssPostURL             string      `json:"wss_post_url,omitempty"`
+	_MediaConstraints      interface{} `json:"media_constraints,omitempty"`
 	IsLoopback             bool        `json:"is_loopback"`
 	HeaderMessage          string      `json:"header_message"`
-	IceServerURL           string      `json:"ice_server_url"`
+	IceServerURL           string      `json:"ice_server_url,omitempty"`
 	ErrorMessages          []string    `json:"error_messages"`
-	IceServerTransports    string      `json:"ice_server_transports"`
-	PcConfig               interface{} `json:"pc_config"`
+	IceServerTransports    string      `json:"ice_server_transports,omitempty"`
+	PcConfig               interface{} `json:"pc_config,omitempty"`
 	WarningMessages        []string    `json:"warning_messages"`
-	PcConstraints          interface{} `json:"pc_constraints"`
-	WssURL                 string      `json:"wss_url"`
-	OfferOptions           string      `json:"offer_options"`
-	VersionInfo            string      `json:"version_info"`
+	PcConstraints          interface{} `json:"pc_constraints,omitempty"`
+	WssURL                 string      `json:"wss_url,omitempty"`
+	OfferOptions           string      `json:"offer_options,omitempty"`
+	VersionInfo            string      `json:"version_info,omitempty"`
 	BypassJoinConfirmation bool        `json:"bypass_join_confirmation"`
 	IncludeLoopbackJs      string      `json:"include_loopback_js"`
-	RoomID                 string      `json:"room_id"`
-	ClientID               string      `json:"client_id"`
-	RoomLink               string      `json:"room_link"`
-	IsInitiator            bool        `json:"isInitiator"`
+	RoomID                 string      `json:"room_id,omitempty"`
+	ClientID               string      `json:"client_id,omitempty"`
+	RoomLink               string      `json:"room_link,omitempty"`
+	IsInitiator            bool        `json:"isInitiator,omitempty"`
 	Messages               []string    `json:"messages,omitempty"`
 }
 
@@ -211,7 +211,7 @@ func getPreferredAudioSendCodec(user_agent string) string {
 	return preferred_audio_send_codec
 }
 
-func makePcConfig(iceTransports string, iceServerOverride map[string]interface{}) interface{} {
+func makePcConfig(iceTransports string, iceServerOverride []string) interface{} {
 	return Config{IceServers: iceServerOverride,
 		IceTransports: strings.Split(iceTransports, ","),
 		BundlePolicy:  "max-bundle",
@@ -242,12 +242,11 @@ func makeMediaTrackConstraints(constraints string) interface{} {
 				} else {
 					mand[c[0]] = c[1]
 				}
-			} /*else {
-				panic("Ignoring malformed constraint: " + constraints)
-			}*/
+			}
 		}
 		track_constraints = &Constraints{Optional: optl, Mandatory: mand}
 	}
+	
 	return track_constraints
 }
 
@@ -769,6 +768,7 @@ func main() {
 			m.HandleFunc("/ws", collider.Handler).Methods("POST")
 		}
 	*/
+	os.Setenv("VERSION_INFO", "{\"branch\": \"master\", \"time\": \"Fri Apr 29 18:31:36 2022 +0100\", \"gitHash\": \"bc19c101e1c1a3d17ed0ef566ec4803e981abf75\"}")
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
