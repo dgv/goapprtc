@@ -59,7 +59,7 @@ const (
 	*/
 	ICE_SERVER_BASE_URL     = "https://goapprtc.appspot.com"
 	ICE_SERVER_URL_TEMPLATE = "%s/v1alpha/iceconfig?key=%s"
-	ICE_SERVER_URLS         = ""
+	ICE_SERVER_URLS         = "turn:192.99.9.67:3478?transport=udp"
 	/*
 	   ICE_SERVER_API_KEY = os.GetVar("ICE_SERVER_API_KEY")
 	   HEADER_MESSAGE = os.GetVar("HEADER_MESSAGE")
@@ -246,7 +246,7 @@ func makeMediaTrackConstraints(constraints string) interface{} {
 		}
 		track_constraints = &Constraints{Optional: optl, Mandatory: mand}
 	}
-	
+
 	return track_constraints
 }
 
