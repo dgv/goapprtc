@@ -119,7 +119,7 @@ type Constraints struct {
 	Mandatory interface{} `json:"mandatory,omitempty"`
 }
 
-type MediaConstraints struct {
+type MediaConstraint struct {
 	Audio interface{} `json:"audio"`
 	Video interface{} `json:"video"`
 	Fake  interface{} `json:"fake"`
@@ -135,8 +135,8 @@ type SDP struct {
 
 type Params struct {
 	WssPostURL             string      `json:"wss_post_url,omitempty"`
-	_MediaConstraints      interface{} `json:"media_constraints,omitempty"`
-	IsLoopback             bool        `json:"is_loopback"`
+	MediaConstraints       string      `json:"media_constraints"`
+	IsLoopback             string      `json:"is_loopback"`
 	HeaderMessage          string      `json:"header_message"`
 	IceServerURL           string      `json:"ice_server_url,omitempty"`
 	ErrorMessages          []string    `json:"error_messages"`
@@ -147,7 +147,7 @@ type Params struct {
 	WssURL                 string      `json:"wss_url,omitempty"`
 	OfferOptions           string      `json:"offer_options,omitempty"`
 	VersionInfo            string      `json:"version_info,omitempty"`
-	BypassJoinConfirmation bool        `json:"bypass_join_confirmation"`
+	BypassJoinConfirmation string      `json:"bypass_join_confirmation"`
 	IncludeLoopbackJs      string      `json:"include_loopback_js"`
 	RoomID                 string      `json:"room_id,omitempty"`
 	ClientID               string      `json:"client_id,omitempty"`
@@ -244,14 +244,15 @@ func makeMediaTrackConstraints(constraints string) interface{} {
 				}
 			}
 		}
-		track_constraints = &Constraints{Optional: optl, Mandatory: mand}
-	}
 
+		track_constraints = &Constraints{Optional: optl, Mandatory: mand}
+		fmt.Printf("%v\n", track_constraints)
+	}
 	return track_constraints
 }
 
 func makeMediaStreamConstraints(audio, video, firefoxFakeDevice string) interface{} {
-	return &MediaConstraints{Audio: makeMediaTrackConstraints(audio), Video: makeMediaTrackConstraints(video), Fake: makeMediaTrackConstraints(firefoxFakeDevice)}
+	return MediaConstraint{Audio: makeMediaTrackConstraints(audio), Video: makeMediaTrackConstraints(video), Fake: makeMediaTrackConstraints(firefoxFakeDevice)}
 }
 
 func makeOfferConstraints() interface{} {
@@ -530,12 +531,12 @@ func getRoomParameters(r *http.Request, roomId, clientId string, isInitiator boo
 	//
 	// 	The audio keys are defined here: talk/app/webrtc/localaudiosource.cc
 	// 	The video keys are defined here: talk/app/webrtc/videosource.cc
-	audio := q.Get("audio")
+	//audio := q.Get("audio")
 	video := q.Get("video")
 
 	//  Pass firefox_fake_device=1 to pass fake: true in the media constraints,
 	//  which will make Firefox use its built-in fake device.
-	firefoxFakeDevice := q.Get("firefox_fake_device")
+	//firefoxFakeDevice := q.Get("firefox_fake_device")
 
 	//  The hd parameter is a shorthand to determine whether to open the
 	//  camera at 720p. If no value is provided, use a platform-specific default.
@@ -590,20 +591,26 @@ func getRoomParameters(r *http.Request, roomId, clientId string, isInitiator boo
 	//  turn servers directly.
 	pcConfig := makePcConfig(iceTransports, ICE_SERVER_OVERRIDE)
 	pcConstraints := makePcConstraints(dtls, dscp, ipv6)
-	mediaConstraints := makeMediaStreamConstraints(audio, video, firefoxFakeDevice)
+	//mediaConstraints := makeMediaStreamConstraints(audio, video, firefoxFakeDevice)
 	wssUrl, wssPostUrl := getWssParameters(r)
 
-	bypassJoinConfirmation := os.Getenv("BYPASS_JOIN_CONFIRMATION") == "True"
-
+	bypassJoinConfirmation := "false"
+	if os.Getenv("BYPASS_JOIN_CONFIRMATION") == "True" {
+		bypassJoinConfirmation = "true"
+	}
+	isLoopback := "false"
+	if debug == "loopback" {
+		isLoopback = "true"
+	}
 	params = Params{
 		HeaderMessage:          HEADER_MESSAGE,
 		ErrorMessages:          errorMessages,
 		WarningMessages:        warningMessages,
-		IsLoopback:             debug == "loopback",
+		IsLoopback:             isLoopback,
 		PcConfig:               pcConfig,
 		PcConstraints:          pcConstraints,
 		OfferOptions:           "{}",
-		_MediaConstraints:      mediaConstraints,
+		MediaConstraints:       "{\"video\": true, \"audio\": true}", //mediaConstraints,
 		IceServerURL:           iceServerUrl,
 		IceServerTransports:    iceServerTransports,
 		IncludeLoopbackJs:      includeLoopbackJs,
