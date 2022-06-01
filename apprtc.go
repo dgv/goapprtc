@@ -120,9 +120,9 @@ type Constraints struct {
 }
 
 type MediaConstraint struct {
-	Audio interface{} `json:"audio"`
-	Video interface{} `json:"video"`
-	Fake  interface{} `json:"fake"`
+	Audio bool `json:"audio"`
+	Video bool `json:"video"`
+	Fake  bool `json:"fake"`
 }
 
 type SDP struct {
@@ -135,12 +135,12 @@ type SDP struct {
 
 type Params struct {
 	WssPostURL             string      `json:"wss_post_url,omitempty"`
-	MediaConstraints       string      `json:"media_constraints"`
+	MediaConstraints       interface{} `json:"media_constraints"`
 	IsLoopback             string      `json:"is_loopback"`
 	HeaderMessage          string      `json:"header_message"`
 	IceServerURL           string      `json:"ice_server_url,omitempty"`
 	ErrorMessages          []string    `json:"error_messages"`
-	IceServerTransports    string      `json:"ice_server_transports,omitempty"`
+	IceServerTransports    string      `json:"ice_server_transports"`
 	PcConfig               interface{} `json:"pc_config,omitempty"`
 	WarningMessages        []string    `json:"warning_messages"`
 	PcConstraints          interface{} `json:"pc_constraints,omitempty"`
@@ -151,7 +151,7 @@ type Params struct {
 	IncludeLoopbackJs      string      `json:"include_loopback_js"`
 	RoomID                 string      `json:"room_id,omitempty"`
 	ClientID               string      `json:"client_id,omitempty"`
-	RoomLink               string      `json:"room_link,omitempty"`
+	RoomLink               string      `json:"room_link"`
 	IsInitiator            bool        `json:"isInitiator,omitempty"`
 	Messages               []string    `json:"messages,omitempty"`
 }
@@ -224,8 +224,7 @@ func makeLoopbackAnswer(message string) string {
 	return message
 }
 
-func makeMediaTrackConstraints(constraints string) interface{} {
-	var track_constraints interface{}
+func makeMediaTrackConstraints(constraints string) (track_constraints bool) {
 	optl := make([]map[string]string, 0)
 	mand := map[string]string{}
 	if constraints == "" || strings.ToLower(constraints) == "true" {
@@ -244,15 +243,17 @@ func makeMediaTrackConstraints(constraints string) interface{} {
 				}
 			}
 		}
-
-		track_constraints = &Constraints{Optional: optl, Mandatory: mand}
-		fmt.Printf("%v\n", track_constraints)
+		//track_constraints = &Constraints{Optional: optl, Mandatory: mand}
 	}
 	return track_constraints
 }
 
 func makeMediaStreamConstraints(audio, video, firefoxFakeDevice string) interface{} {
-	return MediaConstraint{Audio: makeMediaTrackConstraints(audio), Video: makeMediaTrackConstraints(video), Fake: makeMediaTrackConstraints(firefoxFakeDevice)}
+	var isFakeDev bool
+	if firefoxFakeDevice != "" {
+		isFakeDev = makeMediaTrackConstraints(firefoxFakeDevice)
+	}
+	return MediaConstraint{Audio: makeMediaTrackConstraints(audio), Video: makeMediaTrackConstraints(video), Fake: isFakeDev}
 }
 
 func makeOfferConstraints() interface{} {
@@ -531,12 +532,12 @@ func getRoomParameters(r *http.Request, roomId, clientId string, isInitiator boo
 	//
 	// 	The audio keys are defined here: talk/app/webrtc/localaudiosource.cc
 	// 	The video keys are defined here: talk/app/webrtc/videosource.cc
-	//audio := q.Get("audio")
+	audio := q.Get("audio")
 	video := q.Get("video")
 
 	//  Pass firefox_fake_device=1 to pass fake: true in the media constraints,
 	//  which will make Firefox use its built-in fake device.
-	//firefoxFakeDevice := q.Get("firefox_fake_device")
+	firefoxFakeDevice := q.Get("firefox_fake_device")
 
 	//  The hd parameter is a shorthand to determine whether to open the
 	//  camera at 720p. If no value is provided, use a platform-specific default.
@@ -591,7 +592,7 @@ func getRoomParameters(r *http.Request, roomId, clientId string, isInitiator boo
 	//  turn servers directly.
 	pcConfig := makePcConfig(iceTransports, ICE_SERVER_OVERRIDE)
 	pcConstraints := makePcConstraints(dtls, dscp, ipv6)
-	//mediaConstraints := makeMediaStreamConstraints(audio, video, firefoxFakeDevice)
+	mediaConstraints := makeMediaStreamConstraints(audio, video, firefoxFakeDevice)
 	wssUrl, wssPostUrl := getWssParameters(r)
 
 	bypassJoinConfirmation := "false"
@@ -610,7 +611,7 @@ func getRoomParameters(r *http.Request, roomId, clientId string, isInitiator boo
 		PcConfig:               pcConfig,
 		PcConstraints:          pcConstraints,
 		OfferOptions:           "{}",
-		MediaConstraints:       "{\"video\": true, \"audio\": true}", //mediaConstraints,
+		MediaConstraints:       mediaConstraints,
 		IceServerURL:           iceServerUrl,
 		IceServerTransports:    iceServerTransports,
 		IncludeLoopbackJs:      includeLoopbackJs,
