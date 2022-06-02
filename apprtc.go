@@ -622,7 +622,7 @@ func getRoomParameters(r *http.Request, roomId, clientId string, isInitiator boo
 	}
 
 	if roomId != "" {
-		roomLink := maybeUseHttpsHostUrl(r) + "/r/" + roomId
+		roomLink := /*maybeUseHttpsHostUrl(r)*/ "http://localhost:3000" + "/r/" + roomId
 		//roomLink = appendUrlArguments(r, roomLink)
 		params.RoomID = roomId
 		params.RoomLink = roomLink
@@ -720,7 +720,8 @@ func leavePage(w http.ResponseWriter, r *http.Request) {
 // The main UI page, renders the 'index_template.html' template.
 func mainPage(w http.ResponseWriter, r *http.Request) {
 	//checkIfRedirect(r)
-	params, err := getRoomParameters(r, "", "", false)
+
+	params, err := getRoomParameters(r, generateRandom(8), "", false)
 	if err != nil {
 		log.Printf("getRoomParameters: %v", err)
 	}
@@ -733,7 +734,7 @@ func mainPage(w http.ResponseWriter, r *http.Request) {
 
 func paramsPage(w http.ResponseWriter, r *http.Request) {
 	//var data map[string]interface{}
-	params, err := getRoomParameters(r, "", "", false)
+	params, err := getRoomParameters(r, generateRandom(8), "", false)
 	if err != nil {
 		log.Printf("getRoomParameters: %v", err)
 	}
