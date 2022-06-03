@@ -24,6 +24,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"path"
 )
 
 const (
@@ -62,7 +63,6 @@ const (
 	ICE_SERVER_URLS         = "turn:192.99.9.67:3478?transport=udp"
 	/*
 	   ICE_SERVER_API_KEY = os.GetVar("ICE_SERVER_API_KEY")
-	   HEADER_MESSAGE = os.GetVar("HEADER_MESSAGE")
 	   ICE_SERVER_URLS = [url for url in os.environ.get('ICE_SERVER_URLS', '').split(',') if url]
 
 	   // Dictionary keys in the collider instance info constant.
@@ -78,7 +78,7 @@ const (
 	   WSS_HOST_PORT_PAIRS = [ins[WSS_INSTANCE_HOST_KEY] for ins in WSS_INSTANCES]
 	*/
 	// memcache key for the active collider host.iceServers
-	WSS_HOST_PORT_PAIRS      = "goapprtc.dgv.dev.br:443"
+	WSS_HOST_PORT_PAIRS      = "localhost:3000"
 	WSS_HOST_ACTIVE_HOST_KEY = "wss_host_active_host"
 
 	// Dictionary keys in the collider probing result.
@@ -133,6 +133,7 @@ type SDP struct {
 	Label     int    `json:"label,omitempty"`
 }
 
+/*
 type Params struct {
 	WssPostURL             string      `json:"wss_post_url,omitempty"`
 	MediaConstraints       interface{} `json:"media_constraints"`
@@ -149,9 +150,9 @@ type Params struct {
 	VersionInfo            string      `json:"version_info,omitempty"`
 	BypassJoinConfirmation string      `json:"bypass_join_confirmation"`
 	IncludeLoopbackJs      string      `json:"include_loopback_js"`
-	RoomID                 string      `json:"room_id,omitempty"`
+	RoomID                 string      `json:"room_id"`
 	ClientID               string      `json:"client_id,omitempty"`
-	RoomLink               string      `json:"room_link"`
+	RoomLink               string      `json:"room_link,omitempty"`
 	IsInitiator            bool        `json:"isInitiator,omitempty"`
 	Messages               []string    `json:"messages,omitempty"`
 }
@@ -168,7 +169,7 @@ type Client struct {
 	messages    []string
 }
 
-var rooms = map[string]Room{}
+var rooms = make(map[string]Room)
 
 // All the data we store for a room
 type Room struct {
@@ -312,10 +313,13 @@ func (r *Room) getKeyRoom(host, roomId string) string {
 }
 
 func addClientToRoom(hostUrl, roomId, clientId string, isLoopback bool) (error string, isInitiator bool, messages []string, roomState string) {
-	r, ok := rooms[roomId]
+	r, _ := rooms[roomId]
+	/*
 	if !ok {
 		log.Println("room not found")
+		return
 	}
+	*/
 
 	occupancy := r.getOccupancy()
 	if occupancy >= 2 {
@@ -395,7 +399,7 @@ func sendMessageToCollider(r *http.Request, roomId, clientId, message string) {
 
 type result struct {
 	Result  string `json:"result"`
-	Params_ Params `json:"params"`
+	Params_ map[string]interface{}
 }
 
 func messagePage(w http.ResponseWriter, r *http.Request) {
@@ -457,7 +461,7 @@ func maybeUseHttpsHostUrl(r *http.Request) string {
 func getWssParameters(r *http.Request) (wssUrl, wssPostUrl string) {
 	q := r.URL.Query()
 	wssHostPortPair := q.Get("wshpp")
-	wssTls := q.Get("wstls")
+	//wssTls := q.Get("wstls")
 
 	if wssHostPortPair == "" {
 		wssActiveHost := WSS_HOST_ACTIVE_HOST_KEY
@@ -468,19 +472,21 @@ func getWssParameters(r *http.Request) (wssUrl, wssPostUrl string) {
 			wssHostPortPair = strings.Split(WSS_HOST_PORT_PAIRS, ",")[0]
 		}
 	}
-	if wssTls == "false" {
+
+//	if wssTls == "false" {
 		wssUrl = "ws://" + wssHostPortPair + "/ws"
 		wssPostUrl = "http://" + wssHostPortPair
-	} else {
+	/*} else {
 		wssUrl = "wss://" + wssHostPortPair + "/ws"
 		wssPostUrl = "https://" + wssHostPortPair
 	}
+*/
 	return
 }
 
 // Returns appropriate room parameters based on query parameters in the request.
 // TODO(tkchin): move query parameter parsing to JS code.
-func getRoomParameters(r *http.Request, roomId, clientId string, isInitiator bool) (params Params, err error) {
+func getRoomParameters(r *http.Request, roomId, clientId string, isInitiator bool) (params map[string]interface{}, err error) {
 	q := r.URL.Query()
 	// Append strings to this list to have them thrown up in message boxes. This
 	// will also cause the app to fail.
@@ -603,34 +609,34 @@ func getRoomParameters(r *http.Request, roomId, clientId string, isInitiator boo
 	if debug == "loopback" {
 		isLoopback = "true"
 	}
-	params = Params{
-		HeaderMessage:          HEADER_MESSAGE,
-		ErrorMessages:          errorMessages,
-		WarningMessages:        warningMessages,
-		IsLoopback:             isLoopback,
-		PcConfig:               pcConfig,
-		PcConstraints:          pcConstraints,
-		OfferOptions:           "{}",
-		MediaConstraints:       mediaConstraints,
-		IceServerURL:           iceServerUrl,
-		IceServerTransports:    iceServerTransports,
-		IncludeLoopbackJs:      includeLoopbackJs,
-		WssURL:                 wssUrl,
-		WssPostURL:             wssPostUrl,
-		BypassJoinConfirmation: bypassJoinConfirmation,
-		VersionInfo:            os.Getenv("VERSION_INFO"),
+	params = map[string]interface{}{
+		"header_message":           HEADER_MESSAGE,
+		"error_messages":           errorMessages,
+		"warning_messages":         warningMessages,
+		"is_loopback":              isLoopback,
+		"pc_config":                pcConfig,
+		"pc_constraints":           pcConstraints,
+		"offer_options":            "{}",
+		"media_constraints":        mediaConstraints,
+		"IceServerURL":             iceServerUrl,
+		"IceServerTransports":      iceServerTransports,
+		"IncludeLoopbackJs":        includeLoopbackJs,
+		"wssurl":                   wssUrl,
+		"wssposturl":               wssPostUrl,
+		"bypass_join_confirmation": bypassJoinConfirmation,
+		"version_info":             os.Getenv("VERSION_INFO"),
+		"room_link":                "",
 	}
-
 	if roomId != "" {
 		roomLink := /*maybeUseHttpsHostUrl(r)*/ "http://localhost:3000" + "/r/" + roomId
 		//roomLink = appendUrlArguments(r, roomLink)
-		params.RoomID = roomId
-		params.RoomLink = roomLink
+		params["room_id"] = roomId
+		params["room_link"] = roomLink
 	}
 	if clientId != "" {
-		params.ClientID = clientId
+		params["client_id"] = clientId
 	}
-	params.IsInitiator = isInitiator
+	params["is_initiator"] = isInitiator
 
 	return
 }
@@ -646,7 +652,7 @@ func checkIfRedirect(w http.ResponseWriter, r *http.Request) {
 func roomPage(w http.ResponseWriter, r *http.Request) {
 	// Renders index.html or full.html.
 	//checkIfRedirect(r)
-	tpl := "html/index_template.html"
+	tpl := "index_template.html"
 	room := rooms[maybeUseHttpsHostUrl(r)]
 	if room.id != "" {
 		log.Printf("Room %s has state %v", room.id, r)
@@ -668,8 +674,10 @@ func roomPage(w http.ResponseWriter, r *http.Request) {
 
 func joinPage(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	roomId := q.Get("room_id")
-	clientId := q.Get("client_id")
+	//roomId := q.Get("room_id")
+	//clientId := q.Get("client_id")
+	roomId:= path.Base(r.RequestURI)
+	clientId:= generateRandom(8)
 	//isInitiator := q.Get("is_initiator")
 	isLoopback := q.Get("debug") == "loopback"
 	error, isInitiator, messages, roomState := addClientToRoom(r.RequestURI, roomId, clientId, isLoopback)
@@ -685,8 +693,8 @@ func joinPage(w http.ResponseWriter, r *http.Request) {
 	log.Printf("User %s joined room %s", clientId, roomId)
 	log.Printf("Room %s has state %s", roomId, roomState)
 
-	params.Messages = messages
-	_, err = json.Marshal(result{Result: roomState, Params_: params})
+	params["messages"] = messages
+	_, err = json.Marshal(result{roomState, params})
 	if err != nil {
 		log.Printf("Marshal: %v", err)
 	}
@@ -696,36 +704,26 @@ func joinPage(w http.ResponseWriter, r *http.Request) {
 }
 
 func leavePage(w http.ResponseWriter, r *http.Request) {
-	q := r.URL.Query()
-	roomId := q.Get("room_id")
-	clientId := q.Get("client_id")
-	error, roomState := removeClientFromRoom(r.RequestURI, roomId, clientId)
-	if error == "" {
-		log.Printf("Room %s has state %s", roomId, roomState)
+	if r.Method == "POST" {
+		q := r.URL.Query()
+		roomId := q.Get("room_id")
+		clientId := q.Get("client_id")
+		error, roomState := removeClientFromRoom(r.RequestURI, roomId, clientId)
+		if error == "" {
+			log.Printf("Room %s has state %s", roomId, roomState)
+		}
 	}
-	/*
-		data, err := json.Marshal()
-		if err != nil {
-			log.Printf("Unmarshal: %v", err)
-		}
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		enc := json.NewEncoder(w)
-		if err := enc.Encode(data); err != nil {
-			log.Printf("Encode: %v", err)
-		}
-	*/
 }
 
 // The main UI page, renders the 'index_template.html' template.
 func mainPage(w http.ResponseWriter, r *http.Request) {
 	//checkIfRedirect(r)
 
-	params, err := getRoomParameters(r, generateRandom(8), "", false)
+	params, err := getRoomParameters(r, "", "", false)
 	if err != nil {
 		log.Printf("getRoomParameters: %v", err)
 	}
-	mainTemplate := template.Must(template.ParseFiles("html/index_template.html"))
+	mainTemplate := template.Must(template.ParseFiles("index_template.html"))
 	err = mainTemplate.Execute(w, params)
 	if err != nil {
 		log.Printf("mainTemplate: %v", err)
@@ -734,7 +732,7 @@ func mainPage(w http.ResponseWriter, r *http.Request) {
 
 func paramsPage(w http.ResponseWriter, r *http.Request) {
 	//var data map[string]interface{}
-	params, err := getRoomParameters(r, generateRandom(8), "", false)
+	params, err := getRoomParameters(r, "", "", false)
 	if err != nil {
 		log.Printf("getRoomParameters: %v", err)
 	}
@@ -748,19 +746,23 @@ func paramsPage(w http.ResponseWriter, r *http.Request) {
 }
 
 func iceConfigPage(w http.ResponseWriter, r *http.Request) {
-	cfgs := Config{}
-	if ICE_SERVER_OVERRIDE != nil {
-		cfgs.IceServers = ICE_SERVER_OVERRIDE
-	} else {
+	if r.Method == "POST" {
+		cfgs := Config{}
+		/*
+			if ICE_SERVER_OVERRIDE != nil {
+				cfgs.IceServers = ICE_SERVER_OVERRIDE
+			} else {
+		*/
 		cfgs.IceServers = map[string]interface{}{"urls": ICE_SERVER_URLS}
+		//}
+		_, err := json.Marshal(cfgs)
+		if err != nil {
+			log.Printf("Unmarshal: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(cfgs)
 	}
-	_, err := json.Marshal(cfgs)
-	if err != nil {
-		log.Printf("Unmarshal: %v", err)
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(cfgs)
 }
 
 func main() {

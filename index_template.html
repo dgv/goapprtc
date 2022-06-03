@@ -29,11 +29,11 @@
 </head>
 
 <body>
-  {% if .header_message %}
+  {{ if .header_message }}
   <header>
     {{ .header_message }}
   </header>
-  {% endif %}
+  {{ end }} 
   <!--
    * Keep the HTML id attributes in sync with |UI_CONSTANTS| defined in
    * appcontroller.js.
@@ -124,7 +124,6 @@
   <script src="/js/adapter.js"></script>
   <script src="/js/util.js"></script>
   <script src="/js/sdputils.js"></script>
-  <script src="/js/analytics.js"></script>
   <script src="/js/appcontroller.js"></script>
   <script src="/js/call.js"></script>
   <script src="/js/constants.js"></script>
@@ -141,10 +140,10 @@
       errorMessages: {{ .error_messages }},
       isLoopback: {{ .is_loopback }},
       warningMessages: {{ .warning_messages }},
-{% if .room_id %}
+{{ if .room_id }}
       roomId: '{{ .room_id }}',
       roomLink: '{{ .room_link }}',
-{% endif %}
+{{ end }}
       mediaConstraints: {{ .media_constraints }},
       offerOptions: {{ .offer_options }},
       peerConnectionConfig: {{ .pc_config }},
@@ -181,5 +180,6 @@
 
     initialize();
   </script>
+
 </body>
 </html>
