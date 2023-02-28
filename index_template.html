@@ -23,15 +23,15 @@
   <title>AppRTC</title>
 
   <link rel="icon" sizes="192x192" href="/images/webrtc-icon-192x192.png">
-  <link rel="canonical" href="{{ .room_link }}">
+  <link rel="canonical" href="{{ .RoomLink }}">
   <link rel="stylesheet" href="/css/main.css">
 
 </head>
 
 <body>
-  {{ if .header_message }}
+  {{ if .HeaderMessage }}
   <header>
-    {{ .header_message }}
+    {{ .HeaderMessage }}
   </header>
   {{ end }} 
   <!--
@@ -70,7 +70,7 @@
 
   <footer>
     <div id="sharing-div">
-      <div id="room-link">Waiting for someone to join this room: <a id="room-link-href" href="{{ .room_link }}" target="_blank">{{ .room_link }}</a></div>
+      <div id="room-link">Waiting for someone to join this room: <a id="room-link-href" href="{{ .RoomLink }}" target="_blank">{{ .RoomLink }}</a></div>
     </div>
     <div id="info-div">Code for AppRTC is available from <a href="http://github.com/webrtc/apprtc" title="GitHub repo for AppRTC">github.com/webrtc/apprtc</a></div>
     <div id="status-div"></div>
@@ -128,7 +128,7 @@
   <script src="/js/call.js"></script>
   <script src="/js/constants.js"></script>
   <script src="/js/infobox.js"></script>
-  {{ .include_loopback_js }}
+  {{ .IncludeLoopbackJs }}
   <script src="/js/peerconnectionclient.js"></script>
   <script src="/js/roomselection.js"></script>
   <script src="/js/signalingchannel.js"></script>
@@ -137,23 +137,23 @@
 
   <script type="text/javascript">
     var loadingParams = {
-      errorMessages: {{ .error_messages }},
-      isLoopback: {{ .is_loopback }},
-      warningMessages: {{ .warning_messages }},
-{{ if .room_id }}
-      roomId: '{{ .room_id }}',
-      roomLink: '{{ .room_link }}',
+      errorMessages: {{ .ErrorMessages }},
+      isLoopback: {{ .IsLoopback }},
+      warningMessages: {{ .WarningMessages }},
+{{ if .RoomID }}
+      roomId: '{{ .RoomID }}',
+      roomLink: '{{ .RoomLink }}',
 {{ end }}
-      mediaConstraints: {{ .media_constraints }},
-      offerOptions: {{ .offer_options }},
-      peerConnectionConfig: {{ .pc_config }},
-      peerConnectionConstraints: {{ .pc_constraints }},
-      iceServerRequestUrl: '{{ .ice_server_url }}',
-      iceServerTransports: '{{ .ice_server_transports }}',
-      wssUrl: '{{ .wss_url }}',
-      wssPostUrl: '{{ .wss_post_url }}',
-      bypassJoinConfirmation: {{ .bypass_join_confirmation }},
-      versionInfo: {{ .version_info }},
+      mediaConstraints: {{ .MediaConstraints }},
+      offerOptions: {{ .OfferOptions }},
+      peerConnectionConfig: {{ .PcConfig }},
+      peerConnectionConstraints: {{ .PcConstraints }},
+      iceServerRequestUrl: '{{ .IceServerURL }}',
+      iceServerTransports: '{{ .IceServerTransports }}',
+      wssUrl: '{{ .WssURL }}',
+      wssPostUrl: '{{ .WssPostURL }}',
+      bypassJoinConfirmation: {{ .BypassJoinConfirmation }},
+      versionInfo: {{ .VersionInfo }},
     };
 
     var appController;
