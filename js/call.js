@@ -55,10 +55,12 @@ Call.prototype.isInitiator = function() {
 };
 
 Call.prototype.start = function(roomId) {
+  trace(roomId);
   this.connectToRoom_(roomId);
-  if (this.params_.isLoopback) {
+  /*if (this.params_.isLoopback) {
     setupLoopback(this.params_.wssUrl, roomId);
   }
+  */
 };
 
 Call.prototype.restart = function() {

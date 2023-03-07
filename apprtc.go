@@ -395,32 +395,27 @@ type result struct {
 }
 
 func messagePage(w http.ResponseWriter, r *http.Request) {
-	q := r.URL.Query()
-	roomId := q.Get("room_id")
-	clientId := q.Get("client_id")
-	defer r.Body.Close()
-	messageJson, _ := ioutil.ReadAll(r.Body)
-
-	error, saved := saveMessageFromClient(r.RequestURI, roomId, clientId, string(messageJson))
-	if error != "" {
-		return
-	}
-	rlt := result{Result: ""}
-	if !saved {
-		sendMessageToCollider(r, roomId, clientId, string(messageJson))
-	} else {
-		rlt.Result = RESPONSE_SUCCESS
-	}
-
-	data, err := json.Marshal(rlt)
-	if err != nil {
-		log.Printf("Marshal: %v", err)
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	enc := json.NewEncoder(w)
-	if err := enc.Encode(data); err != nil {
-		log.Printf("Encode: %v", err)
+	if params := strings.Split(r.RequestURI, "/"); len(params) >= 2 {
+		roomId := params[len(params)-2]
+		clientId := params[len(params)-1]
+		defer r.Body.Close()
+		messageJson, _ := ioutil.ReadAll(r.Body)
+		println(string(messageJson))
+		error, saved := saveMessageFromClient(r.RequestURI, roomId, clientId, string(messageJson))
+		if error != "" {
+			return
+		}
+		
+		rlt := map[string]string{"result": ""}
+		if !saved {
+			sendMessageToCollider(r, roomId, clientId, string(messageJson))
+		} 
+		if error == "" {
+			rlt["result"] = RESPONSE_SUCCESS
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(rlt)
 	}
 }
 
