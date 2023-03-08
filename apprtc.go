@@ -301,10 +301,6 @@ func (r *Room) getOtherClient(clientId string) *Client {
 	return &Client{}
 }
 
-func (r *Room) getKeyRoom(host, roomId string) string {
-	return fmt.Sprintf("%s/%s", host, roomId)
-}
-
 func addClientToRoom(roomId, clientId string, isLoopback bool) (error string, isInitiator bool, messages []string, roomState string) {
 	r, ok := rooms[roomId]
 	if !ok {
@@ -400,16 +396,15 @@ func messagePage(w http.ResponseWriter, r *http.Request) {
 		clientId := params[len(params)-1]
 		defer r.Body.Close()
 		messageJson, _ := ioutil.ReadAll(r.Body)
-		println(string(messageJson))
 		error, saved := saveMessageFromClient(r.RequestURI, roomId, clientId, string(messageJson))
 		if error != "" {
 			return
 		}
-		
+
 		rlt := map[string]string{"result": ""}
 		if !saved {
 			sendMessageToCollider(r, roomId, clientId, string(messageJson))
-		} 
+		}
 		if error == "" {
 			rlt["result"] = RESPONSE_SUCCESS
 		}
@@ -663,6 +658,14 @@ func joinPage(w http.ResponseWriter, r *http.Request) {
 	clientId := generateRandom(8)
 	isLoopback := q.Get("debug") == "loopback"
 	error, isInitiator, messages, _ := addClientToRoom(roomId, clientId, isLoopback)
+	ro := rooms[roomId]
+	oc := ro.getOtherClient(clientId)
+	messages = oc.messages
+	for _, cl := range rooms[roomId].clients {
+		if len(cl.messages) > 0 {
+			messages = cl.messages
+		}
+	}
 	if error != "" {
 		log.Printf("Error adding client to room: %s room_state %v", error, rooms[roomId])
 		return
