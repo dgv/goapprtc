@@ -25,6 +25,10 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/gorilla/mux"
+	"goapprtc/collider"
+	"golang.org/x/net/websocket"
 )
 
 const (
@@ -32,9 +36,6 @@ const (
 	REDIRECT_DOMAINS = "goapprtc.appspot.com"
 	// URL which we should redirect to if matching in REDIRECT_DOMAINS.
 	REDIRECT_URL = "https://goapprtc.appspot.com"
-
-	ROOM_MEMCACHE_EXPIRATION_SEC = 60 * 60 * 24
-	MEMCACHE_RETRY_LIMIT         = 100
 
 	LOOPBACK_CLIENT_ID = "LOOPBACK_CLIENT_ID"
 
@@ -58,28 +59,12 @@ const (
 	   #   }
 	   # ]
 	*/
-	ICE_SERVER_BASE_URL     = "http://localhost"
+	ICE_SERVER_BASE_URL     = ""
 	ICE_SERVER_URL_TEMPLATE = "%s/v1alpha/iceconfig?key=%s"
 	ICE_SERVER_URLS         = "turn:192.99.9.67:3478?transport=udp"
-	/*
-	   ICE_SERVER_API_KEY = os.GetVar("ICE_SERVER_API_KEY")
-	   ICE_SERVER_URLS = [url for url in os.environ.get('ICE_SERVER_URLS', '').split(',') if url]
 
-	   // Dictionary keys in the collider instance info constant.
-	   WSS_INSTANCE_HOST_KEY = "host_port_pair"
-	   WSS_INSTANCE_NAME_KEY = "vm_name"
-	   WSS_INSTANCE_ZONE_KEY = "zone"
-	   WSS_INSTANCES = [{
-	       WSS_INSTANCE_HOST_KEY: 'apprtc-collider.herokuapp.com:443',
-	       WSS_INSTANCE_NAME_KEY: 'wsserver-std',
-	       WSS_INSTANCE_ZONE_KEY: 'us-central1-a'
-	   }]
-
-	   WSS_HOST_PORT_PAIRS = [ins[WSS_INSTANCE_HOST_KEY] for ins in WSS_INSTANCES]
-	*/
 	// memcache key for the active collider host.iceServers
-	WSS_HOST_PORT_PAIRS      = "localhost:3000"
-	WSS_HOST_ACTIVE_HOST_KEY = "wss_host_active_host"
+	WSS_HOST_PORT_PAIRS = "localhost:3000"
 
 	// Dictionary keys in the collider probing result.
 	WSS_HOST_IS_UP_KEY         = "is_up"
@@ -442,26 +427,17 @@ func maybeUseHttpsHostUrl(r *http.Request) string {
 func getWssParameters(r *http.Request) (wssUrl, wssPostUrl string) {
 	q := r.URL.Query()
 	wssHostPortPair := q.Get("wshpp")
-	//wssTls := q.Get("wstls")
-
+	wssTls := q.Get("wstls")
 	if wssHostPortPair == "" {
-		wssActiveHost := WSS_HOST_ACTIVE_HOST_KEY
-		if strings.Contains(WSS_HOST_PORT_PAIRS, wssActiveHost) {
-			wssHostPortPair = WSS_HOST_PORT_PAIRS
-		} else {
-			// logging warn
-			wssHostPortPair = strings.Split(WSS_HOST_PORT_PAIRS, ",")[0]
-		}
+		wssHostPortPair = WSS_HOST_PORT_PAIRS	
 	}
-
-	//	if wssTls == "false" {
-	wssUrl = "ws://" + wssHostPortPair + "/ws"
-	wssPostUrl = "http://" + wssHostPortPair
-	/*} else {
+	if wssTls == "false" || strings.Contains(wssHostPortPair, "localhost") {
+		wssUrl = "ws://" + wssHostPortPair + "/ws"
+		wssPostUrl = "http://" + wssHostPortPair
+	} else {
 		wssUrl = "wss://" + wssHostPortPair + "/ws"
 		wssPostUrl = "https://" + wssHostPortPair
 	}
-	*/
 	return
 }
 
@@ -543,7 +519,6 @@ func getRoomParameters(r *http.Request, roomId, clientId string, isInitiator boo
 			video = "optional:minWidth=1280,optional:minHeight=720"
 		}
 	}
-
 	if q.Get("minre") != "" || q.Get("maxre") != "" {
 		message = `The "minre" and "maxre" parameters are no longer supported. Use "video" instead.`
 		log.Println(message)
@@ -666,6 +641,7 @@ func joinPage(w http.ResponseWriter, r *http.Request) {
 			messages = cl.messages
 		}
 	}
+
 	if error != "" {
 		log.Printf("Error adding client to room: %s room_state %v", error, rooms[roomId])
 		return
@@ -753,24 +729,30 @@ func iceConfigPage(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
-	http.HandleFunc("/", mainPage)
-	http.HandleFunc("/join/", joinPage)
-	http.HandleFunc("/leave/", leavePage)
-	http.HandleFunc("/message/", messagePage)
-	http.HandleFunc("/params", paramsPage)
-	http.HandleFunc("/v1alpha/iceconfig", iceConfigPage)
-	http.HandleFunc("/r/", roomPage)
-	// collider need websocket support not available on appengine standard
-	/*
-		if os.Getenv("GAE_ENV") != "standard" {
-			m.HandleFunc("/ws", collider.Handler).Methods("POST")
-		}
-	*/
-	os.Setenv("VERSION_INFO", "{\"branch\": \"master\", \"time\": \"Fri Apr 29 18:31:36 2022 +0100\", \"gitHash\": \"bc19c101e1c1a3d17ed0ef566ec4803e981abf75\"}")
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
 	}
+	r := mux.NewRouter()
+	r.HandleFunc("/", mainPage).Methods("GET")
+	r.HandleFunc("/join/{id}", joinPage)
+	r.HandleFunc("/leave/{roomid}/{clientid}", leavePage)
+	r.HandleFunc("/message/{roomid}/{clientid}", messagePage)
+	r.HandleFunc("/params", paramsPage)
+	r.HandleFunc("/v1alpha/iceconfig", iceConfigPage)
+	r.HandleFunc("/r/{id}", roomPage)
+	// collider needs websocket support not available on appengine standard runtime
+	if os.Getenv("GAE_ENV") != "standard" {
+		c := collider.NewCollider(REDIRECT_DOMAINS)
+		r.Handle("/ws", websocket.Handler(c.WsHandler))
+		r.HandleFunc("/status", c.HttpStatusHandler)
+		r.HandleFunc("/", c.HttpHandler).Methods("POST", "DELETE")
+		http.Handle("/css/", http.StripPrefix("/css/", http.FileServer(http.Dir("./css"))))
+		http.Handle("/html/", http.StripPrefix("/html/", http.FileServer(http.Dir("./html"))))
+		http.Handle("/images/", http.StripPrefix("/images/",http.FileServer(http.Dir("./images"))))
+		http.Handle("/js/", http.StripPrefix("/js/", http.FileServer(http.Dir("./js"))))
+	}
+	http.Handle("/", r)
 	log.Printf("listening on port %s", port)
 	log.Fatal(http.ListenAndServe(":"+port, nil))
 }

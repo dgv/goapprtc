@@ -41,9 +41,9 @@ func NewCollider(rs string) *Collider {
 
 // Run starts the collider server and blocks the thread until the program exits.
 func (c *Collider) Run(p int, useTls bool) {
-	http.Handle("/ws", websocket.Handler(c.wsHandler))
-	http.HandleFunc("/status", c.httpStatusHandler)
-	http.HandleFunc("/", c.httpHandler)
+	http.Handle("/ws", websocket.Handler(c.WsHandler))
+	http.HandleFunc("/status", c.HttpStatusHandler)
+	http.HandleFunc("/", c.HttpHandler)
 
 	var e error
 
@@ -77,7 +77,7 @@ func (c *Collider) Run(p int, useTls bool) {
 
 // httpStatusHandler is a HTTP handler that handles GET requests to get the
 // status of collider.
-func (c *Collider) httpStatusHandler(w http.ResponseWriter, r *http.Request) {
+func (c *Collider) HttpStatusHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Add("Access-Control-Allow-Origin", "*")
 	w.Header().Add("Access-Control-Allow-Methods", "GET")
 
@@ -96,10 +96,10 @@ func (c *Collider) httpStatusHandler(w http.ResponseWriter, r *http.Request) {
 // The request must have a form value "msg", which is the message to send.
 // DELETE request to path "/$ROOMID/$CLIENTID" is used to delete all records of a client, including the queued message from the client.
 // "OK" is returned if the request is valid.
-func (c *Collider) httpHandler(w http.ResponseWriter, r *http.Request) {
+func (c *Collider) HttpHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Add("Access-Control-Allow-Origin", "*")
 	w.Header().Add("Access-Control-Allow-Methods", "POST, DELETE")
-
+	
 	p := strings.Split(r.URL.Path, "/")
 	if len(p) != 3 {
 		c.httpError("Invalid path: "+html.EscapeString(r.URL.Path), w)
@@ -142,7 +142,7 @@ func (c *Collider) httpHandler(w http.ResponseWriter, r *http.Request) {
 // The message may be cached by the server if the other client has not joined.
 //
 // Unexpected messages will cause the WebSocket connection to be closed.
-func (c *Collider) wsHandler(ws *websocket.Conn) {
+func (c *Collider) WsHandler(ws *websocket.Conn) {
 	var rid, cid string
 
 	registered := false
