@@ -732,11 +732,11 @@ func main() {
 	}
 	r := mux.NewRouter()
 	r.HandleFunc("/", mainPage).Methods("GET")
-	r.HandleFunc("/join/{roomid}", joinPage)
-	r.HandleFunc("/leave/{roomid}/{clientid}", leavePage)
-	r.HandleFunc("/message/{roomid}/{clientid}", messagePage)
-	r.HandleFunc("/params", paramsPage)
-	r.HandleFunc("/v1alpha/iceconfig", iceConfigPage)
+	r.HandleFunc("/join/{roomid}", joinPage).Methods("POST")
+	r.HandleFunc("/leave/{roomid}/{clientid}", leavePage).Methods("POST")
+	r.HandleFunc("/message/{roomid}/{clientid}", messagePage).Methods("POST")
+	r.HandleFunc("/params", paramsPage).Methods("GET")
+	r.HandleFunc("/v1alpha/iceconfig", iceConfigPage).Methods("POST")
 	r.HandleFunc("/r/{roomid}", roomPage)
 	// collider needs websocket support not available on appengine standard runtime
 	if os.Getenv("GAE_ENV") != "standard" {
