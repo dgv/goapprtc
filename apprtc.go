@@ -20,7 +20,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"path"
 	"regexp"
 	"strconv"
 	"strings"
@@ -376,9 +375,9 @@ type result struct {
 }
 
 func messagePage(w http.ResponseWriter, r *http.Request) {
-	if params := strings.Split(r.RequestURI, "/"); len(params) >= 2 {
-		roomId := params[len(params)-2]
-		clientId := params[len(params)-1]
+	roomId := mux.Vars(r)["roomid"]
+	clientId := mux.Vars(r)["clientid"]
+	if roomId != "" && clientId != "" {
 		defer r.Body.Close()
 		messageJson, _ := ioutil.ReadAll(r.Body)
 		error, saved := saveMessageFromClient(r.RequestURI, roomId, clientId, string(messageJson))
@@ -429,7 +428,7 @@ func getWssParameters(r *http.Request) (wssUrl, wssPostUrl string) {
 	wssHostPortPair := q.Get("wshpp")
 	wssTls := q.Get("wstls")
 	if wssHostPortPair == "" {
-		wssHostPortPair = WSS_HOST_PORT_PAIRS	
+		wssHostPortPair = WSS_HOST_PORT_PAIRS
 	}
 	if wssTls == "false" || strings.Contains(wssHostPortPair, "localhost") {
 		wssUrl = "ws://" + wssHostPortPair + "/ws"
@@ -607,7 +606,7 @@ func roomPage(w http.ResponseWriter, r *http.Request) {
 	//checkIfRedirect(r)
 	tpl := "index_template.html"
 	//room := rooms[maybeUseHttpsHostUrl(r)]
-	roomId := path.Base(r.RequestURI)
+	roomId := mux.Vars(r)["roomid"]
 
 	if room, ok := rooms[roomId]; ok {
 		log.Printf("Room %s has state %v", roomId, rooms[roomId])
@@ -629,7 +628,7 @@ func roomPage(w http.ResponseWriter, r *http.Request) {
 
 func joinPage(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	roomId := path.Base(r.RequestURI)
+	roomId := mux.Vars(r)["roomid"]
 	clientId := generateRandom(8)
 	isLoopback := q.Get("debug") == "loopback"
 	error, isInitiator, messages, _ := addClientToRoom(roomId, clientId, isLoopback)
@@ -667,14 +666,12 @@ func joinPage(w http.ResponseWriter, r *http.Request) {
 }
 
 func leavePage(w http.ResponseWriter, r *http.Request) {
-	if r.Method == "POST" {
-		if params := strings.Split(r.RequestURI, "/"); len(params) >= 2 {
-			roomId := params[len(params)-2]
-			clientId := params[len(params)-1]
-			error, roomState := removeClientFromRoom(roomId, clientId)
-			if error == "" {
-				log.Printf("Room %s has state %s", roomId, roomState)
-			}
+	roomId := mux.Vars(r)["roomid"]
+	clientId := mux.Vars(r)["clientid"]
+	if roomId != "" && clientId != "" {
+		error, roomState := removeClientFromRoom(roomId, clientId)
+		if error == "" {
+			log.Printf("Room %s has state %s", roomId, roomState)
 		}
 	}
 }
@@ -735,12 +732,12 @@ func main() {
 	}
 	r := mux.NewRouter()
 	r.HandleFunc("/", mainPage).Methods("GET")
-	r.HandleFunc("/join/{id}", joinPage)
+	r.HandleFunc("/join/{roomid}", joinPage)
 	r.HandleFunc("/leave/{roomid}/{clientid}", leavePage)
 	r.HandleFunc("/message/{roomid}/{clientid}", messagePage)
 	r.HandleFunc("/params", paramsPage)
 	r.HandleFunc("/v1alpha/iceconfig", iceConfigPage)
-	r.HandleFunc("/r/{id}", roomPage)
+	r.HandleFunc("/r/{roomid}", roomPage)
 	// collider needs websocket support not available on appengine standard runtime
 	if os.Getenv("GAE_ENV") != "standard" {
 		c := collider.NewCollider(REDIRECT_DOMAINS)
@@ -749,7 +746,7 @@ func main() {
 		r.HandleFunc("/", c.HttpHandler).Methods("POST", "DELETE")
 		http.Handle("/css/", http.StripPrefix("/css/", http.FileServer(http.Dir("./css"))))
 		http.Handle("/html/", http.StripPrefix("/html/", http.FileServer(http.Dir("./html"))))
-		http.Handle("/images/", http.StripPrefix("/images/",http.FileServer(http.Dir("./images"))))
+		http.Handle("/images/", http.StripPrefix("/images/", http.FileServer(http.Dir("./images"))))
 		http.Handle("/js/", http.StripPrefix("/js/", http.FileServer(http.Dir("./js"))))
 	}
 	http.Handle("/", r)
