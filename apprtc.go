@@ -32,7 +32,7 @@ import (
 
 const (
 	// Deprecated domains which we should to redirect to REDIRECT_URL.
-	REDIRECT_DOMAINS = "goapprtc.appspot.com"
+	REDIRECT_DOMAINS = "http://localhost:8080"//"goapprtc.appspot.com"
 	// URL which we should redirect to if matching in REDIRECT_DOMAINS.
 	REDIRECT_URL = "https://goapprtc.appspot.com"
 
@@ -63,7 +63,7 @@ const (
 	ICE_SERVER_URLS         = "turn:192.99.9.67:3478?transport=udp"
 
 	// memcache key for the active collider host.iceServers
-	WSS_HOST_PORT_PAIRS = "localhost:3000"
+	WSS_HOST_PORT_PAIRS = "localhost:8080"
 
 	// Dictionary keys in the collider probing result.
 	WSS_HOST_IS_UP_KEY         = "is_up"
@@ -279,7 +279,7 @@ func (r *Room) getClient(clientId string) (c *Client) {
 func (r *Room) getOtherClient(clientId string) *Client {
 	for k, _ := range r.clients {
 		if k != clientId {
-			return r.clients[clientId]
+			return r.clients[k]
 		}
 	}
 	return &Client{}
@@ -309,6 +309,9 @@ func addClientToRoom(roomId, clientId string, isLoopback bool) (error string, is
 		r.clients[clientId].setInitiator()
 		isInitiator = true
 	} else {
+		oc := r.getOtherClient(clientId)
+		messages = oc.messages
+		oc.clearMessages()
 		r.addClient(clientId, &Client{true, []string{}})
 	}
 	rooms[roomId] = r
@@ -632,14 +635,6 @@ func joinPage(w http.ResponseWriter, r *http.Request) {
 	clientId := generateRandom(8)
 	isLoopback := q.Get("debug") == "loopback"
 	error, isInitiator, messages, _ := addClientToRoom(roomId, clientId, isLoopback)
-	ro := rooms[roomId]
-	oc := ro.getOtherClient(clientId)
-	messages = oc.messages
-	for _, cl := range rooms[roomId].clients {
-		if len(cl.messages) > 0 {
-			messages = cl.messages
-		}
-	}
 
 	if error != "" {
 		log.Printf("Error adding client to room: %s room_state %v", error, rooms[roomId])
@@ -743,7 +738,8 @@ func main() {
 		c := collider.NewCollider(REDIRECT_DOMAINS)
 		r.Handle("/ws", websocket.Handler(c.WsHandler))
 		r.HandleFunc("/status", c.HttpStatusHandler)
-		r.HandleFunc("/", c.HttpHandler).Methods("POST", "DELETE")
+		r.HandleFunc("/{roomid}/{clientid}", c.HttpHandler).Methods("POST", "DELETE")
+		r.HandleFunc("/bye/{roomid}/{clientid}", c.HttpHandler)
 		http.Handle("/css/", http.StripPrefix("/css/", http.FileServer(http.Dir("./css"))))
 		http.Handle("/html/", http.StripPrefix("/html/", http.FileServer(http.Dir("./html"))))
 		http.Handle("/images/", http.StripPrefix("/images/", http.FileServer(http.Dir("./images"))))
