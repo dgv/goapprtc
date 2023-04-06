@@ -32,9 +32,9 @@ import (
 
 const (
 	// Deprecated domains which we should to redirect to REDIRECT_URL.
-	REDIRECT_DOMAINS = "http://localhost:8080"//"goapprtc.appspot.com"
+	REDIRECT_DOMAINS = "goapprtc.fly.dev" //"goapprtc.appspot.com"
 	// URL which we should redirect to if matching in REDIRECT_DOMAINS.
-	REDIRECT_URL = "https://goapprtc.appspot.com"
+	REDIRECT_URL = "https://goapprtc.fly.dev"
 
 	LOOPBACK_CLIENT_ID = "LOOPBACK_CLIENT_ID"
 
@@ -58,12 +58,13 @@ const (
 	   #   }
 	   # ]
 	*/
+
 	ICE_SERVER_BASE_URL     = ""
 	ICE_SERVER_URL_TEMPLATE = "%s/v1alpha/iceconfig?key=%s"
 	ICE_SERVER_URLS         = "turn:192.99.9.67:3478?transport=udp"
 
 	// memcache key for the active collider host.iceServers
-	WSS_HOST_PORT_PAIRS = "localhost:8080"
+	WSS_HOST_PORT_PAIRS = "goapprtc.fly.dev"
 
 	// Dictionary keys in the collider probing result.
 	WSS_HOST_IS_UP_KEY         = "is_up"
@@ -82,14 +83,14 @@ const (
 var (
 	HEADER_MESSAGE      = os.Getenv("HEADER_MESSAGE")
 	ICE_SERVER_API_KEY  = os.Getenv("ICE_SERVER_API_KEY")
-	ICE_SERVER_OVERRIDE = []string{}
+	ICE_SERVER_OVERRIDE = os.Getenv("ICE_SERVERS")
 )
 
 type Config struct {
-	IceServers    []string `json:"iceServers"`
-	IceTransports []string `json:"iceTransports,omitempty"`
-	BundlePolicy  string   `json:"bundlePolicy,omitempty"`
-	RtcpMuxPolicy string   `json:"rtcpMuxPolicy,omitempty"`
+	IceServers    []IceServers `json:"iceServers"`
+	IceTransports []string     `json:"iceTransports,omitempty"`
+	BundlePolicy  string       `json:"bundlePolicy,omitempty"`
+	RtcpMuxPolicy string       `json:"rtcpMuxPolicy,omitempty"`
 }
 
 type Options struct {
@@ -107,6 +108,12 @@ type MediaConstraint struct {
 	Audio bool `json:"audio"`
 	Video bool `json:"video"`
 	Fake  bool `json:"fake"`
+}
+
+type IceServers struct {
+	Urls       []string `json:"urls"`
+	Username   string   `json:"username,omitempty"`
+	Credential string   `json:"credential,omitempty"`
 }
 
 type SDP struct {
@@ -186,12 +193,17 @@ func getPreferredAudioSendCodec(user_agent string) string {
 	return preferred_audio_send_codec
 }
 
-func makePcConfig(iceTransports string, iceServerOverride []string) interface{} {
+func makePcConfig(iceTransports string, iceServerOverride string) interface{} {
+	var is []IceServers
+	err := json.Unmarshal([]byte(iceServerOverride), &is)
+	if err != nil {
+		log.Printf("makePcConfig: error while trying to Unmarshal ice_server json %v", err)
+	}
 	it := []string{}
 	if iceTransports != "" {
 		it = strings.Split(iceTransports, ",")
 	}
-	return Config{IceServers: iceServerOverride,
+	return Config{IceServers: is,
 		IceTransports: it,
 		BundlePolicy:  "max-bundle",
 		RtcpMuxPolicy: "require"}
@@ -402,24 +414,24 @@ func messagePage(w http.ResponseWriter, r *http.Request) {
 }
 
 /*
-func makePcConstraints(dtls, dscp, ipv6 string) Constraints {
-	//var constraints *Constraints
-	var _dtls, _dscp, _ipv6 bool
-	//constraints = &Constraints{Optional: []Options{}}
-	if strings.ToLower(dtls) == "true" {
-		_dtls = true
+	func makePcConstraints(dtls, dscp, ipv6 string) Constraints {
+		//var constraints *Constraints
+		var _dtls, _dscp, _ipv6 bool
+		//constraints = &Constraints{Optional: []Options{}}
+		if strings.ToLower(dtls) == "true" {
+			_dtls = true
+		}
+		if strings.ToLower(dscp) == "true" {
+			_dscp = true
+		}
+		if strings.ToLower(ipv6) == "true" {
+			_ipv6 = true
+		}
+		return Constraints{Optional: []Options{{DtlsSrtpKeyAgreement: _dtls, googDscp: _dscp, googIPv6: _ipv6}}}
 	}
-	if strings.ToLower(dscp) == "true" {
-		_dscp = true
-	}
-	if strings.ToLower(ipv6) == "true" {
-		_ipv6 = true
-	}
-	return Constraints{Optional: []Options{{DtlsSrtpKeyAgreement: _dtls, googDscp: _dscp, googIPv6: _ipv6}}}
-}
 */
 func maybeUseHttpsHostUrl(r *http.Request) string {
-	if r.URL.Query().Get("wstls") == "true" {
+	if r.URL.Query().Get("wstls") == "true" || r.Host != "localhost" {
 		// Assume AppRTC is running behind a stunnel proxy and fix base URL.
 		return "https://" + r.Host
 	}
@@ -701,23 +713,15 @@ func paramsPage(w http.ResponseWriter, r *http.Request) {
 }
 
 func iceConfigPage(w http.ResponseWriter, r *http.Request) {
-	if r.Method == "POST" {
-		cfgs := Config{}
-		/*
-			if ICE_SERVER_OVERRIDE != nil {
-				cfgs.IceServers = ICE_SERVER_OVERRIDE
-			} else {
-		*/
-		cfgs.IceServers = []string{"urls: " + ICE_SERVER_URLS}
-		//}
+	cfgs := makePcConfig("", ICE_SERVER_OVERRIDE)
+	/*
 		_, err := json.Marshal(cfgs)
 		if err != nil {
 			log.Printf("Unmarshal: %v", err)
-		}
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(cfgs)
-	}
+		}*/
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(cfgs)
 }
 
 func main() {
