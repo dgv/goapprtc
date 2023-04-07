@@ -1,5 +1,4 @@
-service: goapprtc
-runtime: go115
+runtime: go120
 instance_class: F1
 automatic_scaling:
   max_instances: 1
@@ -27,14 +26,12 @@ handlers:
 
 env_variables:
   BYPASS_JOIN_CONFIRMATION: false
-  # Only change these while developing, do not commit to source!
-  # Use appcfg.py --env_variable=ICE_SERVER_API_KEY:KEY \
-  # in order to replace variables when deploying.
-  ICE_SERVER_API_KEY: ""
   # Comma-separated list of ICE urls to return when no ice server
   # is specified.
-  ICE_SERVER_URLS: ""
+  ICE_SERVERS: ""
   # A message that is always displayed on the app page.
   # This is useful for cases like indicating to the user that this
   # is a demo deployment of the app.
   HEADER_MESSAGE: ""
+  # Externel collider
+  WSS_HOST: ""

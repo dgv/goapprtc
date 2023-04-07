@@ -4,7 +4,7 @@
  * This module demonstrates the WebRTC API by implementing a simple video chat app.
  *
  * Rewritten in Golang by Daniel G. Vargas
- * Based on https://github.com/webrtc/apprtc/blob/master/src/app_engine/apprtc.py (rev.1ee9435)
+ * Based on https://github.com/webrtc/apprtc/blob/master/src/app_engine/apprtc.py (rev.69c3024)
  * Look browser support on http://iswebrtcreadyyet.com/
  *
  */
@@ -32,9 +32,9 @@ import (
 
 const (
 	// Deprecated domains which we should to redirect to REDIRECT_URL.
-	REDIRECT_DOMAINS = "goapprtc.fly.dev" //"goapprtc.appspot.com"
+	//REDIRECT_DOMAINS = "goapprtc.fly.dev" //"goapprtc.appspot.com"
 	// URL which we should redirect to if matching in REDIRECT_DOMAINS.
-	REDIRECT_URL = "https://goapprtc.fly.dev"
+	//REDIRECT_URL = "https://goapprtc.fly.dev"
 
 	LOOPBACK_CLIENT_ID = "LOOPBACK_CLIENT_ID"
 
@@ -63,9 +63,6 @@ const (
 	ICE_SERVER_URL_TEMPLATE = "%s/v1alpha/iceconfig?key=%s"
 	ICE_SERVER_URLS         = "turn:192.99.9.67:3478?transport=udp"
 
-	// memcache key for the active collider host.iceServers
-	WSS_HOST_PORT_PAIRS = "goapprtc.fly.dev"
-
 	// Dictionary keys in the collider probing result.
 	WSS_HOST_IS_UP_KEY         = "is_up"
 	WSS_HOST_STATUS_CODE_KEY   = "status_code"
@@ -84,6 +81,7 @@ var (
 	HEADER_MESSAGE      = os.Getenv("HEADER_MESSAGE")
 	ICE_SERVER_API_KEY  = os.Getenv("ICE_SERVER_API_KEY")
 	ICE_SERVER_OVERRIDE = os.Getenv("ICE_SERVERS")
+	WSS_HOST = os.Getenv("WSS_HOST")
 )
 
 type Config struct {
@@ -94,13 +92,13 @@ type Config struct {
 }
 
 type Options struct {
-	DtlsSrtpKeyAgreement bool
-	googDscp             bool
-	googIPv6             bool
+	DtlsSrtpKeyAgreement bool `json:"DtlsSrtpKeyAgreement,omitempty"`
+	googDscp             bool `json:"googDscp,omitempty"`
+	googIPv6             bool `json:"googIPv6,omitempty"`
 }
 
 type Constraints struct {
-	Optional  []string    `json:"optional"` //[]Options `json:"optional,omitempty"`
+	Optional  []Options   `json:"optional"`
 	Mandatory interface{} `json:"mandatory,omitempty"`
 }
 
@@ -132,7 +130,7 @@ type Params struct {
 	IceServerURL           string          `json:"ice_server_url,omitempty"`
 	ErrorMessages          []string        `json:"error_messages"`
 	IceServerTransports    string          `json:"ice_server_transports"`
-	PcConfig               interface{}     `json:"pc_config,omitempty"`
+	PcConfig               Config          `json:"pc_config,omitempty"`
 	WarningMessages        []string        `json:"warning_messages"`
 	PcConstraints          Constraints     `json:"pc_constraints,omitempty"`
 	WssURL                 string          `json:"wss_url,omitempty"`
@@ -193,11 +191,14 @@ func getPreferredAudioSendCodec(user_agent string) string {
 	return preferred_audio_send_codec
 }
 
-func makePcConfig(iceTransports string, iceServerOverride string) interface{} {
-	var is []IceServers
-	err := json.Unmarshal([]byte(iceServerOverride), &is)
-	if err != nil {
-		log.Printf("makePcConfig: error while trying to Unmarshal ice_server json %v", err)
+func makePcConfig(iceTransports string, iceServerOverride string) Config {
+	is := []IceServers{}
+	if iceServerOverride != "" {
+		err := json.Unmarshal([]byte(iceServerOverride), &is)
+		if err != nil {
+			log.Printf("makePcConfig: error while trying to Unmarshal ice_server json %v", err)
+			return Config{}
+		}
 	}
 	it := []string{}
 	if iceTransports != "" {
@@ -234,7 +235,6 @@ func makeMediaTrackConstraints(constraints string) (track_constraints bool) {
 				}
 			}
 		}
-		//track_constraints = &Constraints{Optional: optl, Mandatory: mand}
 	}
 	return track_constraints
 }
@@ -248,7 +248,7 @@ func makeMediaStreamConstraints(audio, video, firefoxFakeDevice string) MediaCon
 }
 
 func makeOfferConstraints() Constraints {
-	return Constraints{Optional: []string{}, Mandatory: map[string]string{}}
+	return Constraints{Optional: []Options{}, Mandatory: map[string]string{}}
 }
 
 func (c *Client) addMessage(msg string) {
@@ -413,25 +413,22 @@ func messagePage(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-/*
-	func makePcConstraints(dtls, dscp, ipv6 string) Constraints {
-		//var constraints *Constraints
-		var _dtls, _dscp, _ipv6 bool
-		//constraints = &Constraints{Optional: []Options{}}
-		if strings.ToLower(dtls) == "true" {
-			_dtls = true
-		}
-		if strings.ToLower(dscp) == "true" {
-			_dscp = true
-		}
-		if strings.ToLower(ipv6) == "true" {
-			_ipv6 = true
-		}
-		return Constraints{Optional: []Options{{DtlsSrtpKeyAgreement: _dtls, googDscp: _dscp, googIPv6: _ipv6}}}
+func makePcConstraints(dtls, dscp, ipv6 string) Constraints {
+	opts := Options{}
+	if strings.ToLower(dtls) == "true" {
+		opts.DtlsSrtpKeyAgreement = true
 	}
-*/
+	if strings.ToLower(dscp) == "true" {
+		opts.googDscp = true
+	}
+	if strings.ToLower(ipv6) == "true" {
+		opts.googIPv6 = true
+	}
+	return Constraints{Optional: []Options{opts}}
+}
+
 func maybeUseHttpsHostUrl(r *http.Request) string {
-	if r.URL.Query().Get("wstls") == "true" || r.Host != "localhost" {
+	if r.URL.Query().Get("wstls") == "true" || !strings.Contains(r.Host, "localhost") {
 		// Assume AppRTC is running behind a stunnel proxy and fix base URL.
 		return "https://" + r.Host
 	}
@@ -443,7 +440,11 @@ func getWssParameters(r *http.Request) (wssUrl, wssPostUrl string) {
 	wssHostPortPair := q.Get("wshpp")
 	wssTls := q.Get("wstls")
 	if wssHostPortPair == "" {
-		wssHostPortPair = WSS_HOST_PORT_PAIRS
+		if WSS_HOST != "" {
+			wssHostPortPair = WSS_HOST
+		} else {
+			wssHostPortPair = r.Host
+		}
 	}
 	if wssTls == "false" || strings.Contains(wssHostPortPair, "localhost") {
 		wssUrl = "ws://" + wssHostPortPair + "/ws"
@@ -540,16 +541,15 @@ func getRoomParameters(r *http.Request, roomId, clientId string, isInitiator boo
 	}
 
 	//  Options for controlling various networking features.
-	/*
-		dtls := q.Get("dtls")
-		dscp := q.Get("dscp")
-		ipv6 := q.Get("ipv6")
-	*/
+	dtls := q.Get("dtls")
+	dscp := q.Get("dscp")
+	ipv6 := q.Get("ipv6")
+
 	debug := q.Get("debug")
 	var includeLoopbackJs string
 	if debug == "loopback" {
 		// Set dtls to false as DTLS does not work for loopback.
-		//dtls = "false"
+		dtls = "false"
 		includeLoopbackJs = `<script src="/js/loopback.js"></script>`
 	} else {
 		includeLoopbackJs = ""
@@ -568,7 +568,7 @@ func getRoomParameters(r *http.Request, roomId, clientId string, isInitiator boo
 	//  If defined it will override the ICE server provider and use the specified
 	//  turn servers directly.
 	pcConfig := makePcConfig(iceTransports, ICE_SERVER_OVERRIDE)
-	pcConstraints := Constraints{Optional: []string{}} //makePcConstraints(dtls, dscp, ipv6)
+	pcConstraints := makePcConstraints(dtls, dscp, ipv6) // Constraints{Optional: []string{}}
 	mediaConstraints := makeMediaStreamConstraints(audio, video, firefoxFakeDevice)
 	wssUrl, wssPostUrl := getWssParameters(r)
 	isLoopback := "false"
@@ -595,7 +595,6 @@ func getRoomParameters(r *http.Request, roomId, clientId string, isInitiator boo
 	}
 	if roomId != "" {
 		roomLink := maybeUseHttpsHostUrl(r) + "/r/" + roomId
-		//roomLink = appendUrlArguments(r, roomLink)
 		params.RoomID = roomId
 		params.RoomLink = roomLink
 	}
@@ -608,19 +607,9 @@ func getRoomParameters(r *http.Request, roomId, clientId string, isInitiator boo
 	return
 }
 
-func checkIfRedirect(w http.ResponseWriter, r *http.Request) {
-	if strings.Contains(r.Header.Get("Host"), REDIRECT_DOMAINS) {
-		redirectUrl := REDIRECT_URL + "?" + r.URL.Path + r.URL.RawQuery
-		http.Redirect(w, r, redirectUrl, 301)
-	}
-	return
-}
-
 func roomPage(w http.ResponseWriter, r *http.Request) {
 	// Renders index.html or full.html.
-	//checkIfRedirect(r)
 	tpl := "index_template.html"
-	//room := rooms[maybeUseHttpsHostUrl(r)]
 	roomId := mux.Vars(r)["roomid"]
 
 	if room, ok := rooms[roomId]; ok {
@@ -661,12 +650,6 @@ func joinPage(w http.ResponseWriter, r *http.Request) {
 	log.Printf("Room %s has state %v", roomId, rooms[roomId])
 
 	params.Messages = messages
-	/*
-		_, err = json.Marshal(result{"SUCCESS", string(p)})
-		if err != nil {
-			log.Printf("Marshal: %v", err)
-		}
-	*/
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(result{"SUCCESS", params})
@@ -685,8 +668,6 @@ func leavePage(w http.ResponseWriter, r *http.Request) {
 
 // The main UI page, renders the 'index_template.html' template.
 func mainPage(w http.ResponseWriter, r *http.Request) {
-	//checkIfRedirect(r)
-
 	params, err := getRoomParameters(r, "", "", false)
 	if err != nil {
 		log.Printf("getRoomParameters: %v", err)
@@ -714,11 +695,10 @@ func paramsPage(w http.ResponseWriter, r *http.Request) {
 
 func iceConfigPage(w http.ResponseWriter, r *http.Request) {
 	cfgs := makePcConfig("", ICE_SERVER_OVERRIDE)
-	/*
 		_, err := json.Marshal(cfgs)
 		if err != nil {
-			log.Printf("Unmarshal: %v", err)
-		}*/
+			log.Printf("iceConfigPage: marshal: %v", err)
+		}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(cfgs)
@@ -739,7 +719,8 @@ func main() {
 	r.HandleFunc("/r/{roomid}", roomPage)
 	// collider needs websocket support not available on appengine standard runtime
 	if os.Getenv("GAE_ENV") != "standard" {
-		c := collider.NewCollider(REDIRECT_DOMAINS)
+		// use collider locally
+		c := collider.NewCollider("http://localhost:8080")
 		r.Handle("/ws", websocket.Handler(c.WsHandler))
 		r.HandleFunc("/status", c.HttpStatusHandler)
 		r.HandleFunc("/{roomid}/{clientid}", c.HttpHandler).Methods("POST", "DELETE")
