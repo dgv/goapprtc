@@ -81,7 +81,7 @@ var (
 	HEADER_MESSAGE      = os.Getenv("HEADER_MESSAGE")
 	ICE_SERVER_API_KEY  = os.Getenv("ICE_SERVER_API_KEY")
 	ICE_SERVER_OVERRIDE = os.Getenv("ICE_SERVERS")
-	WSS_HOST = os.Getenv("WSS_HOST")
+	WSS_HOST            = os.Getenv("WSS_HOST")
 )
 
 type Config struct {
@@ -695,10 +695,10 @@ func paramsPage(w http.ResponseWriter, r *http.Request) {
 
 func iceConfigPage(w http.ResponseWriter, r *http.Request) {
 	cfgs := makePcConfig("", ICE_SERVER_OVERRIDE)
-		_, err := json.Marshal(cfgs)
-		if err != nil {
-			log.Printf("iceConfigPage: marshal: %v", err)
-		}
+	_, err := json.Marshal(cfgs)
+	if err != nil {
+		log.Printf("iceConfigPage: marshal: %v", err)
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(cfgs)
@@ -720,7 +720,7 @@ func main() {
 	// collider needs websocket support not available on appengine standard runtime
 	if os.Getenv("GAE_ENV") != "standard" {
 		// use collider locally
-		c := collider.NewCollider("http://localhost:"+port)
+		c := collider.NewCollider("http://localhost:" + port)
 		r.Handle("/ws", websocket.Handler(c.WsHandler))
 		r.HandleFunc("/status", c.HttpStatusHandler)
 		r.HandleFunc("/{roomid}/{clientid}", c.HttpHandler).Methods("POST", "DELETE")
