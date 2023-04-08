@@ -720,7 +720,7 @@ func main() {
 	// collider needs websocket support not available on appengine standard runtime
 	if os.Getenv("GAE_ENV") != "standard" {
 		// use collider locally
-		c := collider.NewCollider("http://localhost:8080")
+		c := collider.NewCollider("http://localhost:"+port)
 		r.Handle("/ws", websocket.Handler(c.WsHandler))
 		r.HandleFunc("/status", c.HttpStatusHandler)
 		r.HandleFunc("/{roomid}/{clientid}", c.HttpHandler).Methods("POST", "DELETE")
